@@ -10,22 +10,22 @@
 
 ## Deliverables
 
-- [ ] `env.AI` binding with **AI Gateway** in front; all model calls go through a single wrapper (e.g. `runLLM(env, task, prompt)`) per *Notes for the Coding Agent*.
-- [ ] **Embeddings:** `@cf/baai/bge-large-en-v1.5` → Vectorize `headlines` index + link `vec_id` on `articles` in D1.
-- [ ] **Clustering:** nearest-neighbor vs ~7d headline corpus; cosine **> 0.82** same cluster; **0.78–0.82** band → `@cf/zai/glm-4-7-flash` rerank.
-- [ ] **Candidacy gate** before expensive judgment: `source_weight_sum ≥ 3.0` OR strong Polymarket placeholder hook (Polymarket wiring in M3—gate logic can branch on “has match” once data exists).
-- [ ] **Judgment:** `@cf/moonshotai/kimi-k2-6` (or approved alternate) for final interestingness; log reasoning to `llm_reasoning_log` / cluster row; re-run when signals change materially.
-- [ ] **Scoring formula** per `INITIAL.md`: `final_score = topical_weight * (0.10*coverage + 0.15*novelty + 0.30*surprise + 0.45*llm)` with topical multipliers (Geopolitics 0.40, others 0.20 each).
-- [ ] **Summaries:** `@cf/zai/glm-4-7-flash` for 1–2 sentence article/cluster descriptions in Discord embeds.
-- [ ] **Digest selection:** `final_score ≥ 0.60`, `posted` false, grace window vs `last_digest`; **top 3**, allow **4** only for exceptional score; verify model slugs against current Cloudflare docs before shipping.
+- [x] `env.AI` binding; **AI Gateway** optional via `AI_GATEWAY_ID` (`gateway: { id }` on each call). All Workers AI usage goes through `src/llm.ts` (`runLLM`, `runEmbed`) per *Notes for the Coding Agent*.
+- [x] **Embeddings:** `@cf/baai/bge-large-en-v1.5` → Vectorize `headlines` index + `articles.vec_id` (stable id = `url_hash`) in D1.
+- [x] **Clustering:** nearest-neighbor vs ~7d headline corpus (metadata `ts` post-filter); cosine **> 0.82** same cluster; **0.78–0.82** band → `@cf/zai-org/glm-4.7-flash` rerank (Workers AI slug as of 2026-05 docs).
+- [x] **Candidacy gate** before expensive judgment: `source_weight_sum` / distinct sources **≥ 3** (equal weights in M2); Polymarket “strong match” branch stubbed until M3.
+- [x] **Judgment:** `@cf/moonshotai/kimi-k2.6` for final interestingness; reasoning JSON in `llm_reasoning_log`; re-run when distinct source count increases (broader “material signals” + Polymarket in M3).
+- [x] **Scoring formula** per `INITIAL.md`: `final_score = topical_weight * (0.10*coverage + 0.15*novelty + 0.30*surprise + 0.45*llm)` with topical multipliers (`src/topic.ts`). `surprise_score` forced to **0** until M3 (stub documented in `src/scoring.ts`).
+- [x] **Summaries:** `@cf/zai-org/glm-4.7-flash` for 1–2 sentence Discord embed descriptions (`src/digest.ts`).
+- [x] **Digest selection:** `final_score ≥ 0.60`, `posted_digest_id` null, grace vs `cursors:last_digest_at`, **top 3**, fourth embed only if score **≥ 0.88**; model slugs verified against Cloudflare Workers AI docs before ship.
 
 ---
 
 ## Acceptance criteria
 
-- LLM daily budget stays in intended band (~10–20 judgments/day under normal news load; document assumptions).
-- Digests use real scores and caps; quiet when nothing clears bar.
-- `runLLM` (or equivalent) is the only path to Workers AI for easy model swaps.
+- [x] LLM daily budget: Kimi calls capped via KV (`llm:kimi_count:YYYY-MM-DD`, cap **22**/day) with inline comment in `src/scoring.ts` (~10–20 target under normal load).
+- [x] Digests use scored pool + caps; quiet when nothing clears the bar (`src/digest.ts`).
+- [x] `runLLM` / `runEmbed` are the only paths to `env.AI.run` for chat/embeddings in app code (`src/llm.ts`).
 
 ---
 

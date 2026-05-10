@@ -23,10 +23,17 @@
 | Milestone | State | Owner / notes |
 | --------- | ----- | ------------- |
 | M1 | **Implementation complete; prod smoke optional** | Code matches M1 checklist (cron, D1/KV, 3× RSS, dedup, Jaccard clusters, CT digest gate, webhook + ≥3 sources / 12h). Vectorize deferred to M2. **2026-05-10:** Verified `Intl` returns padded hours (`"05"`); digest gate updated to numeric compare so 05:00 CT runs. |
-| M2 | **In progress (implementation landed in repo)** | Workers AI (`[ai]` + optional `AI_GATEWAY_ID` gateway), Vectorize `headlines` (1024 cosine), BGE embed + NN clustering with GLM rerank 0.78–0.82, Kimi judgment + formula + digest ≥0.60 cap-3/4 + GLM summaries. **Operator:** create index `npx wrangler vectorize create headlines --dimensions=1024 --metric=cosine`, apply migration `0002`, set gateway var if desired, `npm run deploy`. |
-| M3 | Blocked on M2 | — |
-| M4 | Blocked on M2 (M3 recommended) | — |
+| M2 | **Implementation complete; prod smoke optional** | Shipped: `[ai]`, optional `AI_GATEWAY_ID`, Vectorize `headlines` (1024 cosine), BGE + NN clustering + GLM rerank band, Kimi judgment + INITIAL scoring + digest rules (≥0.60, grace, cap 3/4), GLM summaries. **2026-05-10:** Vectorize index created, D1 `0002` applied local+remote, Worker deployed (`anything-interesting`). Optional: `wrangler tail` once at a digest hour to confirm webhook + logs. |
+| M3 | Ready to start | Unblocked now that M2 checklist is complete. |
+| M4 | Blocked on M3 (recommended) | Slash `/topnews` + interactions after Polymarket slice when ready. |
 | M5 | Blocked on M4 | — |
+
+### M2 setup (operator)
+
+1. **Vectorize:** index `headlines` (`--dimensions=1024 --metric=cosine`) — created **2026-05-10**.
+2. **D1:** migration `0002_m2_cluster_scoring.sql` — applied remote + local.
+3. **Deploy:** `npm run deploy` — production Worker updated with `HEADLINES` + `AI` bindings.
+4. **Optional prod check:** at 05:00 / 15:00 / 18:00 CT, `npx wrangler tail anything-interesting` and confirm digest or quiet run; same RSS/DNS caveats as M1 for local `wrangler dev`.
 
 ---
 
@@ -50,4 +57,4 @@ Starter feeds are Reuters (`feeds.reuters.com/reuters/topNews`), BBC World, and 
 
 ---
 
-_Last updated: 2026-05-10 — M2 scoring pipeline implemented (embeddings, Vectorize, GLM/Kimi via `src/llm.ts`, digest rules). Apply D1 migration `0002_m2_cluster_scoring.sql` (`npm run db:remote` / `db:local`) before deploy._
+_Last updated: 2026-05-10 — M2 marked complete in milestone checklist; Vectorize + migrations + deploy done. Next: M3 Polymarket (`MILESTONE-03-polymarket.md`)._

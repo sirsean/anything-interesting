@@ -14,5 +14,15 @@ database_id = "1c9da3d5-43b2-4a08-b7fa-279b7216695a"
 binding = "CONFIG"
 id = "cd4babf1d62b41e286d1972de115b054"
 
-# Vectorize: create an index (`wrangler vectorize create …`) and add a [[vectorize]] block
-# when the account token has Vectorize access (M2).
+# Headline index: `npx wrangler vectorize create headlines --dimensions=1024 --metric=cosine`
+[[vectorize]]
+binding = "HEADLINES"
+index_name = "headlines"
+
+[ai]
+binding = "AI"
+remote = true
+
+[vars]
+# Set in dashboard / `wrangler vars put AI_GATEWAY_ID` to route Workers AI through AI Gateway.
+AI_GATEWAY_ID = ""

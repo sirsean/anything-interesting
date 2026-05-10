@@ -1,23 +1,65 @@
 import { postDigestWebhook, type DiscordEmbed } from './discord';
-import type { Env } from './ingest';
+import type { Env } from './env';
+import { MODEL_GLM_FLASH, runLLM, textFromChatOut } from './llm';
 
 const DIGEST_SOURCE_WINDOW_HOURS = 12;
 const MIN_DISTINCT_SOURCES = 3;
-const MAX_ITEMS = 3;
+const MIN_FINAL_SCORE = 0.6;
+const EXCEPTIONAL_SCORE = 0.88;
 
-type EligibleCluster = {
+type Row = {
   id: number;
   representative_title: string;
   final_score: number;
   source_weight_sum: number;
+  topic: string;
 };
 
-async function loadEligibleClusters(db: D1Database): Promise<EligibleCluster[]> {
+async function summarizeForDiscord(
+  env: Env,
+  title: string,
+  url: string,
+  rep: string,
+): Promise<string> {
+  try {
+    const raw = await runLLM(
+      env,
+      'digest_summary',
+      MODEL_GLM_FLASH,
+      [
+        {
+          role: 'system',
+          content:
+            'Write 1–2 short sentences for a Discord embed description. Neutral wire tone, no markdown, no links.',
+        },
+        {
+          role: 'user',
+          content: `Latest headline: ${title.slice(0, 400)}\nURL: ${url.slice(0, 200)}\nCluster line: ${rep.slice(0, 400)}`,
+        },
+      ],
+      { max_tokens: 180, temperature: 0.35 },
+    );
+    const t = textFromChatOut(raw).trim();
+    if (t.length > 0) return t.slice(0, 4090);
+  } catch (e) {
+    console.error('digest summary GLM failed', e);
+  }
+  return `${rep.slice(0, 220)}${rep.length > 220 ? '…' : ''}`;
+}
+
+async function loadCandidateClusters(db: D1Database, lastDigestIso: string | null): Promise<Row[]> {
+  const graceSql =
+    lastDigestIso == null
+      ? `1 = 1`
+      : `datetime(c.last_updated) >= datetime(?)`;
+
   const { results } = await db
     .prepare(
-      `SELECT c.id, c.representative_title, c.final_score, c.source_weight_sum
+      `SELECT c.id, c.representative_title, c.final_score, c.source_weight_sum, c.topic
        FROM clusters c
        WHERE c.posted_digest_id IS NULL
+         AND c.final_score >= ?
+         AND (${graceSql})
          AND (
            SELECT COUNT(DISTINCT a.source)
            FROM articles a
@@ -25,12 +67,26 @@ async function loadEligibleClusters(db: D1Database): Promise<EligibleCluster[]> 
              AND datetime(a.fetched_at) >= datetime('now', ?)
          ) >= ?
        ORDER BY c.final_score DESC, c.last_updated DESC
-       LIMIT ?`,
+       LIMIT 8`,
     )
-    .bind(`-${DIGEST_SOURCE_WINDOW_HOURS} hours`, MIN_DISTINCT_SOURCES, MAX_ITEMS)
-    .all<EligibleCluster>();
+    .bind(
+      MIN_FINAL_SCORE,
+      ...(lastDigestIso == null ? [] : [lastDigestIso]),
+      `-${DIGEST_SOURCE_WINDOW_HOURS} hours`,
+      MIN_DISTINCT_SOURCES,
+    )
+    .all<Row>();
 
   return results ?? [];
+}
+
+function pickDigestRows(rows: Row[]): Row[] {
+  if (rows.length <= 3) return rows;
+  const fourth = rows[3];
+  if (fourth && fourth.final_score >= EXCEPTIONAL_SCORE) {
+    return rows.slice(0, 4);
+  }
+  return rows.slice(0, 3);
 }
 
 async function sourcesLine(db: D1Database, clusterId: number): Promise<string> {
@@ -49,6 +105,11 @@ function formatDigestLabel(hourCT: string): string {
   return `${padded}:00 CT`;
 }
 
+function topicLabel(t: string): string {
+  if (!t) return 'General';
+  return t.slice(0, 1).toUpperCase() + t.slice(1).toLowerCase();
+}
+
 export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
   const webhook = env.DISCORD_WEBHOOK_URL;
   if (!webhook) {
@@ -56,7 +117,10 @@ export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
     return;
   }
 
-  const clusters = await loadEligibleClusters(env.DB);
+  const lastDigest = await env.CONFIG.get('cursors:last_digest_at');
+  const rows = await loadCandidateClusters(env.DB, lastDigest);
+  const clusters = pickDigestRows(rows);
+
   if (clusters.length === 0) {
     console.log('Digest: no eligible clusters (quiet run)');
     return;
@@ -72,14 +136,17 @@ export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
       .bind(c.id)
       .first<{ url: string; title: string }>();
 
+    const title = (top?.title ?? c.representative_title).slice(0, 256);
+    const url = top?.url ?? 'https://example.invalid';
+    const desc = await summarizeForDiscord(env, title, url, c.representative_title);
+
     embeds.push({
-      title: (top?.title ?? c.representative_title).slice(0, 256),
-      url: top?.url ?? 'https://example.invalid',
-      description:
-        'M1 digest — summaries arrive in M2 (Workers AI). Representative headline from clustered RSS items.',
+      title,
+      url,
+      description: desc,
       color: 15844367,
       fields: [
-        { name: 'Topic', value: 'general', inline: true },
+        { name: 'Topic', value: topicLabel(c.topic), inline: true },
         { name: 'Sources', value: sources.slice(0, 1000), inline: true },
         {
           name: 'Polymarket',
@@ -87,7 +154,9 @@ export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
           inline: false,
         },
       ],
-      footer: { text: `Score: ${c.final_score.toFixed(2)} · news-driven · M1` },
+      footer: {
+        text: `Score: ${c.final_score.toFixed(2)} · news-driven · M2`,
+      },
     });
   }
 

@@ -23,7 +23,7 @@
 | Milestone | State | Owner / notes |
 | --------- | ----- | ------------- |
 | M1 | **Implementation complete; prod smoke optional** | Code matches M1 checklist (cron, D1/KV, 3× RSS, dedup, Jaccard clusters, CT digest gate, webhook + ≥3 sources / 12h). Vectorize deferred to M2. **2026-05-10:** Verified `Intl` returns padded hours (`"05"`); digest gate updated to numeric compare so 05:00 CT runs. |
-| M2 | Ready to start | Depends on M1 code path (above); first real 05:00/15:00/18:00 CT digest in prod still worth one logged `wrangler tail` pass when convenient. |
+| M2 | **In progress (implementation landed in repo)** | Workers AI (`[ai]` + optional `AI_GATEWAY_ID` gateway), Vectorize `headlines` (1024 cosine), BGE embed + NN clustering with GLM rerank 0.78–0.82, Kimi judgment + formula + digest ≥0.60 cap-3/4 + GLM summaries. **Operator:** create index `npx wrangler vectorize create headlines --dimensions=1024 --metric=cosine`, apply migration `0002`, set gateway var if desired, `npm run deploy`. |
 | M3 | Blocked on M2 | — |
 | M4 | Blocked on M2 (M3 recommended) | — |
 | M5 | Blocked on M4 | — |
@@ -50,4 +50,4 @@ Starter feeds are Reuters (`feeds.reuters.com/reuters/topNews`), BBC World, and 
 
 ---
 
-_Last updated: 2026-05-10 — M1 implementation verified against repo; 05:00 CT digest gate fixed (`src/chicago.ts`). Operator checklist: tail prod once at a digest hour to confirm webhook + DB updates._
+_Last updated: 2026-05-10 — M2 scoring pipeline implemented (embeddings, Vectorize, GLM/Kimi via `src/llm.ts`, digest rules). Apply D1 migration `0002_m2_cluster_scoring.sql` (`npm run db:remote` / `db:local`) before deploy._

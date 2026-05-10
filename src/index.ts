@@ -1,5 +1,6 @@
 import { deliverDigest } from './digest';
-import { runIngest, type Env } from './ingest';
+import { runIngest } from './ingest';
+import type { Env } from './env';
 import { getChicagoHour, isDigestHour } from './chicago';
 
 export default {

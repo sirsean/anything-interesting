@@ -1,0 +1,24 @@
+{
+  "name": "anything-interesting",
+  "version": "1.0.0",
+  "description": "News alerting agent (Cloudflare Workers)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "tsc --noEmit",
+    "db:local": "wrangler d1 migrations apply news-alert-agent --local",
+    "db:remote": "wrangler d1 migrations apply news-alert-agent --remote"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "fast-xml-parser": "^5.7.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260510.1",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.90.0"
+  }
+}

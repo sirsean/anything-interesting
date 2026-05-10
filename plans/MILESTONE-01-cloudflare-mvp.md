@@ -10,14 +10,14 @@
 
 ## Deliverables
 
-- [ ] `wrangler init` TypeScript Worker; `wrangler.toml` with D1, KV, Vectorize bindings (Vectorize may be lightly used or stubbed until M2—binding still OK for forward compatibility).
-- [ ] D1 schema migration aligned with MVP needs: at minimum `articles`, `clusters`, and fields needed for digest selection (`final_score` can be a simple proxy or placeholder until M2).
-- [ ] Hourly cron in `wrangler.toml` (`0 * * * *`); `scheduled()` entry runs ingest every hour.
-- [ ] RSS fetcher for **three** starter sources: Reuters, AP, BBC (URLs in `INITIAL.md` → *Data Sources → News*).
-- [ ] URL-hash dedup before insert.
-- [ ] **Naive clustering:** substring / token overlap on titles (no embeddings yet).
-- [ ] Digest delivery gated on **America/Chicago** local hour ∈ `{5, 15, 18}` using the `Intl.DateTimeFormat` pattern from `INITIAL.md` (*Cadence*).
-- [ ] Discord **webhook** poster: single message, threshold **≥3 distinct sources** within **12h** for a cluster to be digest-eligible (per Phase 1 spec).
+- [x] `wrangler init` TypeScript Worker; `wrangler.toml` with D1 + KV (`Vectorize` binding deferred until M2: create index + grant token Vectorize, then add `[[vectorize]]` — see `CURRENT_PROGRESS.md`).
+- [x] D1 schema migration aligned with MVP needs: at minimum `articles`, `clusters`, and fields needed for digest selection (`final_score` can be a simple proxy or placeholder until M2).
+- [x] Hourly cron in `wrangler.toml` (`0 * * * *`); `scheduled()` entry runs ingest every hour.
+- [x] RSS fetcher for **three** starter sources: Reuters, AP, BBC (URLs in `INITIAL.md` → *Data Sources → News*).
+- [x] URL-hash dedup before insert.
+- [x] **Naive clustering:** substring / token overlap on titles (no embeddings yet).
+- [x] Digest delivery gated on **America/Chicago** local hour ∈ `{5, 15, 18}` using the `Intl.DateTimeFormat` pattern from `INITIAL.md` (*Cadence*).
+- [x] Discord **webhook** poster: single message, threshold **≥3 distinct sources** within **12h** for a cluster to be digest-eligible (per Phase 1 spec).
 - [ ] Manual or logged verification plan for **first digest at 05:00 CT** (document how you verified in `CURRENT_PROGRESS.md`).
 
 ---

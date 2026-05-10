@@ -1,0 +1,18 @@
+name = "news-alert-agent"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+
+[triggers]
+crons = ["0 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "news-alert-agent"
+database_id = "64fc777e-24a3-4aa1-b272-8c0bd54f40e6"
+
+[[kv_namespaces]]
+binding = "CONFIG"
+id = "7b8f1cca39444dd090579c6a7f3931ae"
+
+# Vectorize: create an index (`wrangler vectorize create …`) and add a [[vectorize]] block
+# when the account token has Vectorize access (M2).

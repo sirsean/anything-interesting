@@ -22,10 +22,32 @@
 
 | Milestone | State | Owner / notes |
 | --------- | ----- | ------------- |
-| M1 | **Not started** | — |
+| M1 | **In progress (implementation landed)** | Worker `news-alert-agent` deployed; D1 `news-alert-agent` + KV `CONFIG` bound. Vectorize binding deferred (API token lacked Vectorize; add in M2). |
 | M2 | Blocked on M1 | — |
 | M3 | Blocked on M2 | — |
 | M4 | Blocked on M2 (M3 recommended) | — |
 | M5 | Blocked on M4 | — |
 
-_Last updated: 2026-05-10 — milestone files created from INITIAL.md; implementation not begun._
+---
+
+## M1 setup (operator)
+
+1. **Discord webhook (digest):** `npx wrangler secret put DISCORD_WEBHOOK_URL` and paste the channel webhook URL. Without it, digest hours log a warning and skip posting (ingest still runs).
+2. **Remote D1 migrations:** already applied once; after new migration files run `npm run db:remote` (and `db:local` for dev).
+3. **Deploy:** `npm run deploy` from repo root.
+4. **Health:** `GET https://news-alert-agent.sirsean.workers.dev/health` → JSON `{ ok: true }`.
+5. **Cron:** hourly `0 * * * *` — `scheduled()` runs ingest every hour; digest runs only when America/Chicago hour is **5, 15, or 18** (see `src/chicago.ts`).
+
+### M1 verification — first digest at 05:00 CT
+
+- **Production:** After `DISCORD_WEBHOOK_URL` is set, wait for the top-of-hour UTC cron when Chicago is 05:00, 15:00, or 18:00. Confirm a single webhook message with header like `05:00 CT digest — N items` (or quiet if no cluster has ≥3 distinct sources with `fetched_at` in the last 12h).
+- **Logs:** `npx wrangler tail news-alert-agent` and look for `scheduled tick Chicago hour=…`, `ingest done …`, and either `Digest: no eligible clusters` or `Digest posted post_id=…`.
+- **Local / `wrangler dev`:** use `npx wrangler dev --local --test-scheduled` and open `/__scheduled`. Outbound RSS fetches require working DNS from the machine running workerd (some environments block or fail lookups).
+
+### RSS note
+
+Starter feeds are Reuters (`feeds.reuters.com/reuters/topNews`), BBC World, and AP (`apnews.com/index.rss`). AP may return **401** to some automated clients; if ingest logs show repeated AP failures, swap that feed URL in `src/sources.ts` for another outlet from `INITIAL.md` (same code path).
+
+---
+
+_Last updated: 2026-05-10 — M1 Worker + D1 schema + ingest/digest pipeline deployed; operator steps and 05:00 CT verification documented above._

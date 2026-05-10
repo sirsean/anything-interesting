@@ -6,8 +6,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "check": "tsc --noEmit",
-    "db:local": "wrangler d1 migrations apply news-alert-agent --local",
-    "db:remote": "wrangler d1 migrations apply news-alert-agent --remote"
+    "db:local": "wrangler d1 migrations apply anything-interesting --local",
+    "db:remote": "wrangler d1 migrations apply anything-interesting --remote"
   },
   "keywords": [],
   "author": "",

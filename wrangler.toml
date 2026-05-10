@@ -1,4 +1,4 @@
-name = "news-alert-agent"
+name = "anything-interesting"
 main = "src/index.ts"
 compatibility_date = "2026-05-01"
 
@@ -7,12 +7,12 @@ crons = ["0 * * * *"]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "news-alert-agent"
-database_id = "64fc777e-24a3-4aa1-b272-8c0bd54f40e6"
+database_name = "anything-interesting"
+database_id = "1c9da3d5-43b2-4a08-b7fa-279b7216695a"
 
 [[kv_namespaces]]
 binding = "CONFIG"
-id = "7b8f1cca39444dd090579c6a7f3931ae"
+id = "cd4babf1d62b41e286d1972de115b054"
 
 # Vectorize: create an index (`wrangler vectorize create …`) and add a [[vectorize]] block
 # when the account token has Vectorize access (M2).

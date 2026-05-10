@@ -8,7 +8,7 @@ export type ParsedItem = {
 };
 
 const UA =
-  'Mozilla/5.0 (compatible; news-alert-agent/1.0; +https://developers.cloudflare.com/workers/)';
+  'Mozilla/5.0 (compatible; anything-interesting/1.0; +https://developers.cloudflare.com/workers/)';
 
 function pickText(v: unknown): string | null {
   if (v == null) return null;

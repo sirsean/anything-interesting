@@ -6,7 +6,7 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (req.method === 'GET' && url.pathname === '/health') {
-      return Response.json({ ok: true, service: 'news-alert-agent' });
+      return Response.json({ ok: true, service: 'anything-interesting' });
     }
     return new Response('Not found', { status: 404 });
   },

@@ -7,7 +7,8 @@
     "deploy": "wrangler deploy",
     "check": "tsc --noEmit",
     "db:local": "wrangler d1 migrations apply anything-interesting --local",
-    "db:remote": "wrangler d1 migrations apply anything-interesting --remote"
+    "db:remote": "wrangler d1 migrations apply anything-interesting --remote",
+    "discord:register-topnews": "node scripts/register-topnews.mjs"
   },
   "keywords": [],
   "author": "",
@@ -18,6 +19,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260510.1",
+    "dotenv": "^17.4.2",
     "typescript": "^6.0.3",
     "wrangler": "^4.90.0"
   }

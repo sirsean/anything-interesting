@@ -25,8 +25,20 @@
 | M1 | **Implementation complete; prod smoke optional** | Code matches M1 checklist (cron, D1/KV, 3× RSS, dedup, Jaccard clusters, CT digest gate, webhook + ≥3 sources / 12h). Vectorize deferred to M2. **2026-05-10:** Verified `Intl` returns padded hours (`"05"`); digest gate updated to numeric compare so 05:00 CT runs. |
 | M2 | **Implementation complete; prod smoke optional** | Shipped: `[ai]`, optional `AI_GATEWAY_ID`, Vectorize `headlines` (1024 cosine), BGE + NN clustering + GLM rerank band, Kimi judgment + INITIAL scoring + digest rules (≥0.60, grace, cap 3/4), GLM summaries. **2026-05-10:** Vectorize index created, D1 `0002` applied local+remote, Worker deployed (`anything-interesting`). Optional: `wrangler tail` once at a digest hour to confirm webhook + logs. |
 | M3 | **Implementation complete; deployed; prod smoke optional** | Shipped 2026-05-10: Gamma + CLOB clients (`src/polymarket.ts`), watchlist with deterministic+Kimi filter (`src/watchlist.ts`), hourly `market_snapshots` writer + Strategy B sweep (`src/snapshots.ts`), Strategy A match wired into `refreshClusterScores` (`src/match_markets.ts`), digest embeds with Polymarket field + 📈 prefix + relaxed source gate for market-driven items, `0003_m3_polymarket.sql` migration, `MARKETS` Vectorize binding. **2026-05-10:** Vectorize `markets` index created; D1 `0003` applied local + remote; Worker deployed (version `cd7e14c5-ed29-49b3-8bf3-3cffbd6e0d8c`); `/health` 200. Optional: `npx wrangler tail` next hour to confirm `watchlist refresh persisted=…` + `snapshots done …` lines. |
-| M4 | Unblocked once M3 deploy is green | Slash `/topnews` + interactions next. |
-| M5 | Blocked on M4 | — |
+| M4 | **Implementation complete; operator wiring + deploy** | Code: `POST /interactions` (`src/interactions.ts`) — Web Crypto ed25519 verify (`DISCORD_PUBLIC_KEY`), PING `type: 1`, `/topnews` deferred `type: 5` + follow-up to `webhooks/{app}/{token}` (no bot token in Worker), D1 last-12h query + optional topic, embeds via shared `discord_cluster_embed.ts`, Digest status badges (`posted` / `upcoming` / `below threshold`). Registration: `npm run discord:register-topnews` (`scripts/register-topnews.mjs`, bot token env-only). Migration `0004_m4_topnews_index.sql`. **Operator:** create app + bot, set Interactions URL to `https://<worker>/interactions`, `wrangler secret put DISCORD_PUBLIC_KEY`, register command, install bot, `db:remote` / `db:local` for `0004`, `npm run deploy`. |
+| M5 | Unblocked | Feedback / `source_weights` next (`MILESTONE-05-feedback-source-weighting.md`). |
+
+### M4 setup (operator)
+
+1. **Discord Developer Portal:** create an application + bot user. **Interactions Endpoint URL:** `https://anything-interesting.sirsean.workers.dev/interactions` (replace host if your worker name/route differs).
+2. **Secret:** `npx wrangler secret put DISCORD_PUBLIC_KEY` — paste the application’s **public key** (hex). The Worker never stores the bot token.
+3. **Register slash command (one-time, from laptop/CI):**  
+   Put `DISCORD_APPLICATION_ID` and `DISCORD_BOT_TOKEN` in repo-root `.env` (gitignored; see `.env.example` and `AGENTS.md`), then run `npm run discord:register-topnews`. The script loads `.env` via dotenv; you can still override with exported shell vars. The bot token is only used for this HTTP call to Discord’s API (`PUT /applications/.../commands`).
+4. **D1:** apply `0004_m4_topnews_index.sql` — `npm run db:local` and `npm run db:remote`.
+5. **Deploy:** `npm run deploy`.
+6. **Install** the bot to your server (OAuth2 URL Generator: `applications.commands` + `bot` if you also need gateway later; for interactions-only, `applications.commands` is enough).
+7. **Verify:** Portal “Interactions” test / first `/topnews` in Discord; `npx wrangler tail anything-interesting` on errors. PING succeeds when URL + public key are correct.
+8. **Behavior notes:** `/topnews` always responds with a **deferred** acknowledgement (`type: 5`) then posts the real message via the **interaction webhook** within 15 minutes so slow D1/embed work never misses Discord’s 3s window. Descriptions match digest *fields*; copy uses the same truncated rep line as the digest GLM fallback (no extra Workers AI on the hot path).
 
 ### M2 setup (operator)
 
@@ -69,4 +81,4 @@ Starter feeds are Reuters (`feeds.reuters.com/reuters/topNews`), BBC World, and 
 
 ---
 
-_Last updated: 2026-05-10 — M3 deployed: Vectorize `markets` created, D1 `0003` applied local + remote, Worker version `cd7e14c5-ed29-49b3-8bf3-3cffbd6e0d8c` live. Next: M4 Discord slash `/topnews` (`MILESTONE-04-discord-slash-topnews.md`)._
+_Last updated: 2026-05-10 — M4 implemented: interactions route, `DISCORD_PUBLIC_KEY` verify, `/topnews` + `register-topnews` script, D1 `0004` index, shared embed helpers. Next: operator portal + secret + deploy; then M5._

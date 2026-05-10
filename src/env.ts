@@ -9,6 +9,8 @@ export type Env = {
   MARKETS: Vectorize;
   AI: Ai;
   DISCORD_WEBHOOK_URL?: string;
+  /** Hex-encoded Discord application public key (Interactions verify). `wrangler secret put DISCORD_PUBLIC_KEY`. */
+  DISCORD_PUBLIC_KEY?: string;
   /** Cloudflare AI Gateway id; empty = direct Workers AI (no gateway). */
   AI_GATEWAY_ID?: string;
 };

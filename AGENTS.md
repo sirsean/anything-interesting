@@ -7,3 +7,7 @@ Use the `plans/` directory to store plans for current/future coding agents and t
 ## Git
 
 Do not ever commit automatically. The user will explicitly request git actions, that is the only time you should commit or push.
+
+## Wrangler
+
+You can perform `npm run ...` and `npx wrangler ...` commands without explicit approval.

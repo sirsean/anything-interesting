@@ -1,5 +1,7 @@
 # News Alerting Agent — Implementation Plan (v3)
 
+**Execution for coding agents:** Follow the milestone table under *Implementation sequence*; update `CURRENT_PROGRESS.md` when starting or finishing a step. Everything below is architecture and product context, not a duplicate task list.
+
 ## Goal
 
 A Cloudflare-hosted system that ingests news hourly, scores candidate stories continuously against multi-source coverage and Polymarket prediction-market signals, and:
@@ -308,62 +310,17 @@ Add indices for: `clusters(final_score DESC, posted_digest_id IS NULL)`, `cluste
 - `cursors:last_digest_at`
 - `cursors:last_ingest_per_source`
 
-## Implementation Phases
+## Implementation sequence
 
-### Phase 1 — MVP on Cloudflare (~2 days)
+Checklists, acceptance criteria, and sequencing live only in the milestone files—follow them in order and update `CURRENT_PROGRESS.md` as work moves.
 
-- `wrangler init` TypeScript Worker.
-- D1, KV, Vectorize bindings; schema migration.
-- Hourly cron handler.
-- RSS fetcher for 3 starter sources (Reuters, AP, BBC).
-- URL-hash dedup.
-- Naive clustering: substring overlap on titles.
-- Discord webhook poster.
-- Digest delivery gated on Chicago local hour.
-- Threshold: ≥3 sources within 12h.
-- Verify first digest fires at 05:00 CT.
-
-### Phase 2 — Workers AI scoring (~2 days)
-
-- `env.AI` binding with AI Gateway.
-- BGE embeddings into Vectorize.
-- Real clustering with cosine + GLM rerank on close calls.
-- Kimi K2.6 interestingness judgment with explicit criteria prompt. Log reasoning.
-- GLM article summaries in embed descriptions.
-- Topical weighting; 0.60 threshold; hard cap of 3 items.
-
-### Phase 3 — Polymarket integration (~2–3 days)
-
-- Gamma API client; auto-watchlist with category filter + Kimi disambiguation.
-- CLOB price fetcher; hourly snapshot loop.
-- Market embeddings into Vectorize.
-- Strategy A (news → markets) — augment candidates with market match + surprise score.
-- Strategy B (markets → news) — movement detector + news search + Kimi explainer + 📈 entries in the pool.
-
-### Phase 4 — On-demand Discord bot (~1–2 days)
-
-- Discord application + bot user setup.
-- Slash command registration script (`/topnews [count] [topic]`).
-- Worker `fetch()` handler with ed25519 signature verification.
-- PING/PONG handshake to pass Discord's endpoint validation.
-- Query D1 for top-N from last 12h; respond inline with embeds.
-- Status badges on results ("in upcoming digest", "already posted", "below threshold").
-
-### Phase 5 — Feedback loop & dynamic source weighting (~ongoing)
-
-- Listen for reactions: extend the bot to handle Message Components or a separate ingest of reaction events via Discord webhook events.
-- Write reactions into `feedback` table with cluster + source attribution.
-- Per-source weight update on each reaction:
-  ```
-  weight_new = weight_old + (reaction == 👍 ? +0.02 : -0.02)
-  weight_new = clamp(weight_new, 0.5, 1.5)
-  // Bayesian smoothing toward 1.0 when pos_count + neg_count < 10
-  effective_weight = (1 - α) * 1.0 + α * weight_new
-  where α = min(1, (pos_count + neg_count) / 20)
-  ```
-- Source weights feed back into `source_weight_sum` in cluster scoring on next ingest.
-- Periodic prompt refinement using logged `llm_reasoning` of false positives (👎'd posts) and false negatives (high-engagement posts that scored low historically).
-- Optional AI Gateway swap to Anthropic Sonnet for judgment step if precision plateaus.
+| Step | Milestone | Rough effort |
+| ---- | ---------- | ------------ |
+| M1 | [`MILESTONE-01-cloudflare-mvp.md`](MILESTONE-01-cloudflare-mvp.md) | ~2 days |
+| M2 | [`MILESTONE-02-workers-ai-scoring.md`](MILESTONE-02-workers-ai-scoring.md) | ~2 days |
+| M3 | [`MILESTONE-03-polymarket.md`](MILESTONE-03-polymarket.md) | ~2–3 days |
+| M4 | [`MILESTONE-04-discord-slash-topnews.md`](MILESTONE-04-discord-slash-topnews.md) | ~1–2 days |
+| M5 | [`MILESTONE-05-feedback-source-weighting.md`](MILESTONE-05-feedback-source-weighting.md) | ongoing |
 
 ## Resolved Decisions
 
@@ -374,7 +331,7 @@ Add indices for: `clusters(final_score DESC, posted_digest_id IS NULL)`, `cluste
 - Polymarket watchlist: auto-generated from top 50 markets by 24h volume, category-filtered
 - Precision: 0.60 threshold, hard cap of 3 items/digest, quiet runs post nothing
 - Discord: single channel; webhook for digests + bot interactions for `/topnews`
-- Source weighting: start equal at 1.0, drift dynamically based on reactions (Phase 5)
+- Source weighting: start equal at 1.0, drift dynamically based on reactions (M5)
 
 ## Non-goals
 

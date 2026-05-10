@@ -22,8 +22,8 @@
 
 | Milestone | State | Owner / notes |
 | --------- | ----- | ------------- |
-| M1 | **In progress (implementation landed)** | Worker `anything-interesting` deployed; D1 `anything-interesting` + KV `CONFIG` bound; `DISCORD_WEBHOOK_URL` secret set. Vectorize binding deferred (API token lacked Vectorize; add in M2). |
-| M2 | Blocked on M1 | — |
+| M1 | **Implementation complete; prod smoke optional** | Code matches M1 checklist (cron, D1/KV, 3× RSS, dedup, Jaccard clusters, CT digest gate, webhook + ≥3 sources / 12h). Vectorize deferred to M2. **2026-05-10:** Verified `Intl` returns padded hours (`"05"`); digest gate updated to numeric compare so 05:00 CT runs. |
+| M2 | Ready to start | Depends on M1 code path (above); first real 05:00/15:00/18:00 CT digest in prod still worth one logged `wrangler tail` pass when convenient. |
 | M3 | Blocked on M2 | — |
 | M4 | Blocked on M2 (M3 recommended) | — |
 | M5 | Blocked on M4 | — |
@@ -50,4 +50,4 @@ Starter feeds are Reuters (`feeds.reuters.com/reuters/topNews`), BBC World, and 
 
 ---
 
-_Last updated: 2026-05-10 — `DISCORD_WEBHOOK_URL` set; digest will post on eligible digest hours. M1 05:00 CT verification still pending a real run._
+_Last updated: 2026-05-10 — M1 implementation verified against repo; 05:00 CT digest gate fixed (`src/chicago.ts`). Operator checklist: tail prod once at a digest hour to confirm webhook + DB updates._

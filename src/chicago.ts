@@ -1,6 +1,9 @@
-const DIGEST_HOURS = new Set(['5', '15', '18']);
+const DIGEST_HOUR_NUMS = new Set([5, 15, 18]);
 
-/** America/Chicago local hour, 24h string without padding (matches INITIAL.md gate). */
+/**
+ * America/Chicago local hour as formatted by Intl (ICU uses two-digit hours, e.g. "05").
+ * INITIAL.md shows ['5','15','18']; we gate on numeric hour so padding never breaks the 05:00 slot.
+ */
 export function getChicagoHour(date: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Chicago',
@@ -10,5 +13,6 @@ export function getChicagoHour(date: Date = new Date()): string {
 }
 
 export function isDigestHour(date: Date = new Date()): boolean {
-  return DIGEST_HOURS.has(getChicagoHour(date));
+  const n = parseInt(getChicagoHour(date), 10);
+  return Number.isFinite(n) && DIGEST_HOUR_NUMS.has(n);
 }

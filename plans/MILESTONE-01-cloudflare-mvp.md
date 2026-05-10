@@ -18,7 +18,7 @@
 - [x] **Naive clustering:** substring / token overlap on titles (no embeddings yet).
 - [x] Digest delivery gated on **America/Chicago** local hour ∈ `{5, 15, 18}` using the `Intl.DateTimeFormat` pattern from `INITIAL.md` (*Cadence*).
 - [x] Discord **webhook** poster: single message, threshold **≥3 distinct sources** within **12h** for a cluster to be digest-eligible (per Phase 1 spec).
-- [ ] Manual or logged verification plan for **first digest at 05:00 CT** (document how you verified in `CURRENT_PROGRESS.md`).
+- [ ] Manual or logged verification for **first digest at 05:00 CT** in production (`wrangler tail` + Discord). Verification steps documented in `CURRENT_PROGRESS.md`; **2026-05-10** code review fixed digest hour gate (`Intl` pads early hours as `"05"`).
 
 ---
 

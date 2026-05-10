@@ -10,14 +10,14 @@
 
 ## Deliverables
 
-- [ ] **Gamma API** client: active markets, sort by 24h volume; verify shapes against `https://docs.polymarket.com`.
-- [ ] **CLOB API** client: YES probability, 24h history, single-market by slug as needed.
-- [ ] **Daily / hourly watchlist job:** top **50** by 24h volume; deterministic category filter (drop sports, pop culture, entertainment; keep elections, geopolitics, economics, policy, tech, science); ambiguous rows → **Kimi K2.6** keep/drop.
-- [ ] Persist watchlist in **KV** (24h TTL) and embeddings in **Vectorize** `markets` index; `markets` table in D1 with `vec_id`, `last_seen_in_watchlist`.
-- [ ] **Hourly snapshots:** `market_snapshots` with 14d retention policy.
-- [ ] **Strategy A (news → markets):** embed rep headline + summary; Vectorize top-10; if best similarity > 0.70, Kimi rerank to 0–2 markets; compute surprise `|price_now - price_24h_ago|` with scaling + near-50% bonus per spec.
-- [ ] **Strategy B (markets → news):** compare watchlist prices to prior snapshot; flag **>4% absolute** or **>25% relative** move; keyword search articles (24h); Kimi “what likely happened”; `flow_type = market_driven`; **📈** prefix in embed title path.
-- [ ] Digest and `/topnews` surfaces (when M4 exists) show Polymarket field per embed JSON example in `INITIAL.md`.
+- [x] **Gamma API** client: active markets, sort by 24h volume (`src/polymarket.ts`); shapes verified against `https://docs.polymarket.com` 2026-05.
+- [x] **CLOB API** client: 24h history via `/prices-history` (used as fallback for 24h-ago price); YES probability + single-market lookup come from Gamma `/markets?slug=`.
+- [x] **Daily watchlist job:** top **50** by 24h volume, KV-cursor gated to refresh once every ~23h; deterministic category filter + Kimi K2.6 keep/drop on ambiguous rows (`src/watchlist.ts`).
+- [x] Watchlist persisted in **KV** (`watchlist:current`, 26h TTL) and embeddings in Vectorize `markets`; `markets` table in D1 with `vec_id`, `yes_token_id`, `last_seen_in_watchlist`.
+- [x] **Hourly snapshots:** `market_snapshots` rows + 14d retention prune (`src/snapshots.ts`).
+- [x] **Strategy A (news → markets):** rep-title embed → Vectorize top-10 → Kimi rerank when top similarity ≥ 0.70 → surprise = scaled `|Δprice|` + near-50% bonus, written into `clusters.surprise_score` and the polymarket fields (`src/match_markets.ts`, `src/scoring.ts`).
+- [x] **Strategy B (markets → news):** snapshot diff vs ~24h prior; flag `>4%` absolute or `>25%` relative moves; keyword article search (24h); Kimi explainer; `flow_type='market_driven'` cluster with **📈** prefix in digest title.
+- [x] Digest embeds carry the Polymarket field (linked title + price + 24h delta) and a `news-driven` vs `market-driven` footer flavor; `/topnews` surface lands in M4.
 
 ---
 

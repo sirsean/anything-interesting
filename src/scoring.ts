@@ -1,5 +1,6 @@
 import type { Env } from './env';
 import { MODEL_KIMI_JUDGE, runLLM, textFromChatOut } from './llm';
+import { matchClusterToMarkets } from './match_markets';
 import { inferTopicFromTitle, topicalWeight } from './topic';
 
 /** ~3 digests × few judgments + buffer; aligns with INITIAL ~10–20/day target. */
@@ -32,11 +33,6 @@ function noveltyFromFirstSeen(firstSeen: string): number {
   return Math.max(0, Math.min(1, 1 - hours / 120));
 }
 
-/**
- * Polymarket-driven surprise stays 0 until M3 (no market match / price pipeline yet).
- */
-const SURPRISE_STUB = 0;
-
 type ClusterRow = {
   representative_title: string;
   llm_score: number;
@@ -64,8 +60,9 @@ async function maybeRunJudgment(
   distinct: number,
   coverage: number,
   novelty: number,
+  polymarketStrong: boolean,
+  polymarketContext: string,
 ): Promise<{ llm: number; log: string | null; judgedDistinct: number }> {
-  const polymarketStrong = false;
   const candidacy = distinct >= 3 || polymarketStrong;
   if (!candidacy) {
     return { llm: row.llm_score, log: null, judgedDistinct: row.judged_distinct_sources };
@@ -98,7 +95,7 @@ async function maybeRunJudgment(
         },
         {
           role: 'user',
-          content: `Representative headline: ${row.representative_title.slice(0, 500)}\nDistinct major outlets (unweighted count): ${distinct}\nCoverage signal (0-1): ${coverage.toFixed(2)}\nNovelty (0-1): ${novelty.toFixed(2)}\nPolymarket context: none (stub until M3).`,
+          content: `Representative headline: ${row.representative_title.slice(0, 500)}\nDistinct major outlets (unweighted count): ${distinct}\nCoverage signal (0-1): ${coverage.toFixed(2)}\nNovelty (0-1): ${novelty.toFixed(2)}\nPolymarket context: ${polymarketContext}`,
         },
       ],
       { max_tokens: 400, temperature: 0.3, response_format: { type: 'json_object' } },
@@ -121,8 +118,9 @@ async function maybeRunJudgment(
 export async function refreshClusterScores(env: Env, clusterId: number): Promise<void> {
   const row = await env.DB
     .prepare(
-      `SELECT c.representative_title, c.first_seen, c.llm_score,
-              c.judged_distinct_sources, c.surprise_score, c.llm_reasoning_log
+      `SELECT c.representative_title, c.first_seen, c.llm_score, c.flow_type,
+              c.judged_distinct_sources, c.surprise_score, c.llm_reasoning_log,
+              c.polymarket_slug, c.polymarket_match_score
        FROM clusters c WHERE c.id = ?`,
     )
     .bind(clusterId)
@@ -130,12 +128,18 @@ export async function refreshClusterScores(env: Env, clusterId: number): Promise
       representative_title: string;
       first_seen: string;
       llm_score: number;
+      flow_type: string;
       judged_distinct_sources: number;
       surprise_score: number;
       llm_reasoning_log: string | null;
+      polymarket_slug: string | null;
+      polymarket_match_score: number;
     }>();
 
   if (!row) return;
+
+  // Market-driven clusters are owned by `snapshots.ts`; don't second-guess them.
+  if (row.flow_type === 'market_driven') return;
 
   const distinctRow = await env.DB
     .prepare(`SELECT COUNT(DISTINCT source) AS d FROM articles WHERE cluster_id = ?`)
@@ -148,6 +152,26 @@ export async function refreshClusterScores(env: Env, clusterId: number): Promise
   const topic = inferTopicFromTitle(row.representative_title);
   const tw = topicalWeight(topic);
 
+  // Strategy A — only spend embeddings/LLM once a cluster crosses candidacy.
+  let market: Awaited<ReturnType<typeof matchClusterToMarkets>> = null;
+  if (distinct >= 3) {
+    try {
+      market = await matchClusterToMarkets(env, row.representative_title, '');
+    } catch (e) {
+      console.error('Strategy A match failed', clusterId, e);
+    }
+  }
+
+  const polymarketStrong = market != null && market.surprise >= 0.4;
+  const polymarketContext =
+    market == null
+      ? 'no Polymarket match.'
+      : `${market.title} (similarity ${market.similarity.toFixed(2)}, YES ${
+          market.priceNow != null ? (market.priceNow * 100).toFixed(0) + '%' : 'n/a'
+        }, 24h ago ${
+          market.price24hAgo != null ? (market.price24hAgo * 100).toFixed(0) + '%' : 'n/a'
+        }).`;
+
   const j = await maybeRunJudgment(
     env,
     {
@@ -159,10 +183,12 @@ export async function refreshClusterScores(env: Env, clusterId: number): Promise
     distinct,
     coverage,
     novelty,
+    polymarketStrong,
+    polymarketContext,
   );
 
   const llm = j.llm;
-  const surprise = SURPRISE_STUB;
+  const surprise = market?.surprise ?? 0;
   const final = tw * (0.1 * coverage + 0.15 * novelty + 0.3 * surprise + 0.45 * llm);
 
   await env.DB
@@ -177,7 +203,11 @@ export async function refreshClusterScores(env: Env, clusterId: number): Promise
            final_score = ?,
            topic = ?,
            llm_reasoning_log = COALESCE(?, llm_reasoning_log),
-           judged_distinct_sources = ?
+           judged_distinct_sources = ?,
+           polymarket_slug = COALESCE(?, polymarket_slug),
+           polymarket_match_score = ?,
+           polymarket_price = ?,
+           polymarket_price_24h_ago = ?
        WHERE id = ?`,
     )
     .bind(
@@ -190,6 +220,10 @@ export async function refreshClusterScores(env: Env, clusterId: number): Promise
       topic,
       j.log,
       j.judgedDistinct,
+      market?.slug ?? null,
+      market?.similarity ?? row.polymarket_match_score,
+      market?.priceNow ?? null,
+      market?.price24hAgo ?? null,
       clusterId,
     )
     .run();

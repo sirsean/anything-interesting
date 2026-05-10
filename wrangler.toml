@@ -19,6 +19,11 @@ id = "cd4babf1d62b41e286d1972de115b054"
 binding = "HEADLINES"
 index_name = "headlines"
 
+# Markets index: `npx wrangler vectorize create markets --dimensions=1024 --metric=cosine`
+[[vectorize]]
+binding = "MARKETS"
+index_name = "markets"
+
 [ai]
 binding = "AI"
 remote = true

@@ -10,7 +10,10 @@ export type LlmTaskTag =
   | 'cluster_rerank'
   | 'judgment'
   | 'digest_summary'
-  | 'topic_infer';
+  | 'topic_infer'
+  | 'watchlist_filter'
+  | 'market_match'
+  | 'market_explain';
 
 type AiRunOptions = {
   tags?: string[];

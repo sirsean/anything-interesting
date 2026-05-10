@@ -1,0 +1,1 @@
+Use the `plans/` directory to store plans for current/future coding agents and to maintain a `CURRENT_PROGRESS.md` file that describes where we are in our implementation plan. We should always make sure to read the plans and update the progress file as we work.

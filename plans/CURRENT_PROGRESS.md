@@ -22,7 +22,7 @@
 
 | Milestone | State | Owner / notes |
 | --------- | ----- | ------------- |
-| M1 | **In progress (implementation landed)** | Worker `anything-interesting` deployed; D1 `anything-interesting` + KV `CONFIG` bound. Vectorize binding deferred (API token lacked Vectorize; add in M2). |
+| M1 | **In progress (implementation landed)** | Worker `anything-interesting` deployed; D1 `anything-interesting` + KV `CONFIG` bound; `DISCORD_WEBHOOK_URL` secret set. Vectorize binding deferred (API token lacked Vectorize; add in M2). |
 | M2 | Blocked on M1 | — |
 | M3 | Blocked on M2 | — |
 | M4 | Blocked on M2 (M3 recommended) | — |
@@ -32,7 +32,7 @@
 
 ## M1 setup (operator)
 
-1. **Discord webhook (digest):** `npx wrangler secret put DISCORD_WEBHOOK_URL` and paste the channel webhook URL. **Re-run this after renaming the Worker** (secrets are per script name). Without it, digest hours log a warning and skip posting (ingest still runs).
+1. **Discord webhook (digest):** configured (`DISCORD_WEBHOOK_URL`). To rotate: `npx wrangler secret put DISCORD_WEBHOOK_URL`.
 2. **Remote D1 migrations:** already applied once; after new migration files run `npm run db:remote` (and `db:local` for dev).
 3. **Deploy:** `npm run deploy` from repo root.
 4. **Health:** `GET https://anything-interesting.sirsean.workers.dev/health` → JSON `{ ok: true }`.
@@ -40,7 +40,7 @@
 
 ### M1 verification — first digest at 05:00 CT
 
-- **Production:** After `DISCORD_WEBHOOK_URL` is set, wait for the top-of-hour UTC cron when Chicago is 05:00, 15:00, or 18:00. Confirm a single webhook message with header like `05:00 CT digest — N items` (or quiet if no cluster has ≥3 distinct sources with `fetched_at` in the last 12h).
+- **Production:** At the top of an hour when Chicago is 05:00, 15:00, or 18:00, confirm a single webhook message with header like `05:00 CT digest — N items` (or a quiet run if no cluster has ≥3 distinct sources with `fetched_at` in the last 12h).
 - **Logs:** `npx wrangler tail anything-interesting` and look for `scheduled tick Chicago hour=…`, `ingest done …`, and either `Digest: no eligible clusters` or `Digest posted post_id=…`.
 - **Local / `wrangler dev`:** use `npx wrangler dev --local --test-scheduled` and open `/__scheduled`. Outbound RSS fetches require working DNS from the machine running workerd (some environments block or fail lookups).
 
@@ -50,4 +50,4 @@ Starter feeds are Reuters (`feeds.reuters.com/reuters/topNews`), BBC World, and 
 
 ---
 
-_Last updated: 2026-05-10 — M1 Worker + D1 schema + ingest/digest pipeline deployed; operator steps and 05:00 CT verification documented above._
+_Last updated: 2026-05-10 — `DISCORD_WEBHOOK_URL` set; digest will post on eligible digest hours. M1 05:00 CT verification still pending a real run._

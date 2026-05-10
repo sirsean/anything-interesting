@@ -26,7 +26,16 @@
 | M2 | **Implementation complete; prod smoke optional** | Shipped: `[ai]`, optional `AI_GATEWAY_ID`, Vectorize `headlines` (1024 cosine), BGE + NN clustering + GLM rerank band, Kimi judgment + INITIAL scoring + digest rules (≥0.60, grace, cap 3/4), GLM summaries. **2026-05-10:** Vectorize index created, D1 `0002` applied local+remote, Worker deployed (`anything-interesting`). Optional: `wrangler tail` once at a digest hour to confirm webhook + logs. |
 | M3 | **Implementation complete; deployed; prod smoke optional** | Shipped 2026-05-10: Gamma + CLOB clients (`src/polymarket.ts`), watchlist with deterministic+Kimi filter (`src/watchlist.ts`), hourly `market_snapshots` writer + Strategy B sweep (`src/snapshots.ts`), Strategy A match wired into `refreshClusterScores` (`src/match_markets.ts`), digest embeds with Polymarket field + 📈 prefix + relaxed source gate for market-driven items, `0003_m3_polymarket.sql` migration, `MARKETS` Vectorize binding. **2026-05-10:** Vectorize `markets` index created; D1 `0003` applied local + remote; Worker deployed (version `cd7e14c5-ed29-49b3-8bf3-3cffbd6e0d8c`); `/health` 200. Optional: `npx wrangler tail` next hour to confirm `watchlist refresh persisted=…` + `snapshots done …` lines. |
 | M4 | **Implementation complete; operator wiring + deploy** | Code: `POST /interactions` (`src/interactions.ts`) — Web Crypto ed25519 verify (`DISCORD_PUBLIC_KEY`), PING `type: 1`, `/topnews` deferred `type: 5` + follow-up to `webhooks/{app}/{token}` (no bot token in Worker), D1 last-12h query + optional topic, embeds via shared `discord_cluster_embed.ts`, Digest status badges (`posted` / `upcoming` / `below threshold`). Registration: `npm run discord:register-topnews` (`scripts/register-topnews.mjs`, bot token env-only). Migration `0004_m4_topnews_index.sql`. **Operator:** create app + bot, set Interactions URL to `https://<worker>/interactions`, `wrangler secret put DISCORD_PUBLIC_KEY`, register command, install bot, `db:remote` / `db:local` for `0004`, `npm run deploy`. |
-| M5 | Unblocked | Feedback / `source_weights` next (`MILESTONE-05-feedback-source-weighting.md`). |
+| M5 | **Implementation complete; operator wiring + deploy** | Shipped: `feedback` + `source_weights` + `post_cluster_messages` (`0005_m5_feedback.sql`); digest = one Discord message per cluster + footer hint; hourly `syncDigestReactions` (`src/reaction_sync.ts`) with optional `DISCORD_BOT_TOKEN` + webhook channel resolve; weighted coverage gate (`MIN_WEIGHTED_SOURCE_COVERAGE` 3.0) in `digest.ts`, `interactions.ts`, `scoring.ts`; `JUDGMENT_MODEL` var for optional Kimi swap. **Operator:** `db:local` / `db:remote` for `0005`, `wrangler secret put DISCORD_BOT_TOKEN` (bot in digest channel, Read History), `npm run deploy`. Optional: `wrangler vars put JUDGMENT_MODEL=<slug>`. |
+
+### M5 setup (operator)
+
+1. **D1:** apply `0005_m5_feedback.sql` — `npm run db:local` and `npm run db:remote`.
+2. **Discord bot token in Worker:** `npx wrangler secret put DISCORD_BOT_TOKEN` — same bot installed in the digest channel as for slash commands. Needed only so the hourly job can `GET …/reactions` on digest messages (webhook posts are visible to the bot). Scope: channel access + Read Message History.
+3. **Deploy:** `npm run deploy`.
+4. **Behavior:** First poll after a digest **baselines** existing reactors (no weight change); **new** 👍/👎 after that adjust `source_weights` and re-score clusters that touch those outlets. Weights stay in `[0.5, 1.5]` with Bayesian smoothing toward 1.0 until 20+ feedback events per outlet.
+5. **Optional:** `npx wrangler vars put JUDGMENT_MODEL` — Workers AI model slug for the judgment step (default Kimi K2.6).
+6. **Tuning loop (manual):** Query `feedback` for 👎 on `post_cluster_messages` rows tied to posted digests; spot-check `llm_reasoning_log` on those clusters; adjust prompts in `scoring.ts` / `llm.ts` as needed.
 
 ### M4 setup (operator)
 
@@ -81,4 +90,4 @@ Starter feeds are Reuters (`feeds.reuters.com/reuters/topNews`), BBC World, and 
 
 ---
 
-_Last updated: 2026-05-10 — M4 implemented: interactions route, `DISCORD_PUBLIC_KEY` verify, `/topnews` + `register-topnews` script, D1 `0004` index, shared embed helpers. Next: operator portal + secret + deploy; then M5._
+_Last updated: 2026-05-10 — M5 implemented: feedback + dynamic weights, per-cluster digest messages, reaction polling, weighted digest/scoring gates, optional `JUDGMENT_MODEL`. Next: operator `0005` + `DISCORD_BOT_TOKEN` secret + deploy._

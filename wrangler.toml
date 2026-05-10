@@ -31,3 +31,5 @@ remote = true
 [vars]
 # Set in dashboard / `wrangler vars put AI_GATEWAY_ID` to route Workers AI through AI Gateway.
 AI_GATEWAY_ID = ""
+# Optional override for final cluster judgment model (Workers AI slug), e.g. when swapping via AI Gateway.
+JUDGMENT_MODEL = ""

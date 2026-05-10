@@ -10,14 +10,14 @@
 
 ## Deliverables
 
-- [ ] **Reaction capture:** extend bot or add pathway (Message Components vs webhook events—pick one, document tradeoffs) so 👍/👎 (or chosen emoji set) maps to `cluster_id` + contributing `source`(s).
-- [ ] **D1 `feedback`:** insert rows `(message_id, cluster_id, user_id, reaction, ts)`.
-- [ ] **Weight updates** per formula in `INITIAL.md`:
+- [x] **Reaction capture:** REST poll (no Gateway) with optional `DISCORD_BOT_TOKEN`; digest posts **one webhook message per cluster** so each `message_id` maps to a single `cluster_id`. Tradeoff vs single multi-embed message: slightly more channel noise; enables per-story reactions without message components.
+- [x] **D1 `feedback`:** insert rows `(message_id, cluster_id, user_id, reaction, ts)` with dedupe `UNIQUE(message_id, user_id, reaction)`.
+- [x] **Weight updates** per formula in `INITIAL.md`:
   - `weight_new = weight_old + (👍 ? +0.02 : -0.02)`; clamp `[0.5, 1.5]`.
   - Bayesian smoothing toward 1.0 when counts low: `effective_weight = (1-α)*1.0 + α*weight_new`, `α = min(1, (pos_count+neg_count)/20)`.
-- [ ] **`source_weights` table** maintained; ingest uses effective weights in `source_weight_sum`.
-- [ ] **Operational loop:** export or query `llm_reasoning_log` for false positives (👎 on posted items) and false negatives (high engagement, low score) to refine prompts periodically (process documented, automation optional).
-- [ ] **Optional:** route judgment only through AI Gateway to **Anthropic Sonnet** if Workers AI precision plateaus—keep behind same `runLLM` abstraction.
+- [x] **`source_weights` table** maintained; scoring + digest gates use effective weights in `source_weight_sum` / weighted coverage (see `source_weights.ts`, `scoring.ts`, `digest.ts`).
+- [x] **Operational loop:** query `feedback` JOIN `posts` / `post_cluster_messages` for 👎 on posted clusters (false positives); cross-check `clusters` where `final_score` is low but reactions positive (false negatives); use `llm_reasoning_log` text for prompt tweaks — manual periodic review (documented here; automation optional).
+- [x] **Optional judgment swap:** `JUDGMENT_MODEL` worker var (and AI Gateway) to point `runLLM` at another Workers AI slug; Anthropic Sonnet via Gateway remains a one-line model change when CF exposes a compatible id.
 
 ---
 

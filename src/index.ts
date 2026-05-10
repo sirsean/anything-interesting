@@ -3,6 +3,7 @@ import { runIngest } from './ingest';
 import type { Env } from './env';
 import { getChicagoHour, isDigestHour } from './chicago';
 import { handleDiscordInteraction } from './interactions';
+import { syncDigestReactions } from './reaction_sync';
 import { runMarketSnapshotsAndStrategyB } from './snapshots';
 import { refreshWatchlistIfDue } from './watchlist';
 
@@ -31,6 +32,12 @@ export default {
       }
     } catch (e) {
       console.error('watchlist refresh error', e);
+    }
+
+    try {
+      await syncDigestReactions(env);
+    } catch (e) {
+      console.error('reaction sync error', e);
     }
 
     try {

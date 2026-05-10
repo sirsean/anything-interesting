@@ -1,6 +1,8 @@
 import type { Env } from './env';
+import { MIN_WEIGHTED_SOURCE_COVERAGE } from './digest_constants';
 import { MODEL_KIMI_JUDGE, runLLM, textFromChatOut } from './llm';
 import { matchClusterToMarkets } from './match_markets';
+import { weightedDistinctSourceSum } from './source_weights';
 import { inferTopicFromTitle, topicalWeight } from './topic';
 
 /** ~3 digests × few judgments + buffer; aligns with INITIAL ~10–20/day target. */
@@ -58,12 +60,13 @@ async function maybeRunJudgment(
   env: Env,
   row: ClusterRow,
   distinct: number,
+  weightedSum: number,
   coverage: number,
   novelty: number,
   polymarketStrong: boolean,
   polymarketContext: string,
 ): Promise<{ llm: number; log: string | null; judgedDistinct: number }> {
-  const candidacy = distinct >= 3 || polymarketStrong;
+  const candidacy = weightedSum >= MIN_WEIGHTED_SOURCE_COVERAGE || polymarketStrong;
   if (!candidacy) {
     return { llm: row.llm_score, log: null, judgedDistinct: row.judged_distinct_sources };
   }
@@ -81,12 +84,14 @@ async function maybeRunJudgment(
     return { llm: row.llm_score, log: null, judgedDistinct: row.judged_distinct_sources };
   }
 
+  const judgeModel = env.JUDGMENT_MODEL?.trim() || MODEL_KIMI_JUDGE;
+
   let raw: unknown;
   try {
     raw = await runLLM(
       env,
       'judgment',
-      MODEL_KIMI_JUDGE,
+      judgeModel,
       [
         {
           role: 'system',
@@ -95,7 +100,7 @@ async function maybeRunJudgment(
         },
         {
           role: 'user',
-          content: `Representative headline: ${row.representative_title.slice(0, 500)}\nDistinct major outlets (unweighted count): ${distinct}\nCoverage signal (0-1): ${coverage.toFixed(2)}\nNovelty (0-1): ${novelty.toFixed(2)}\nPolymarket context: ${polymarketContext}`,
+          content: `Representative headline: ${row.representative_title.slice(0, 500)}\nDistinct outlets: ${distinct} · weighted coverage sum: ${weightedSum.toFixed(2)} (gate ≥ ${MIN_WEIGHTED_SOURCE_COVERAGE})\nCoverage signal (0-1): ${coverage.toFixed(2)}\nNovelty (0-1): ${novelty.toFixed(2)}\nPolymarket context: ${polymarketContext}`,
         },
       ],
       { max_tokens: 400, temperature: 0.3, response_format: { type: 'json_object' } },
@@ -147,14 +152,15 @@ export async function refreshClusterScores(env: Env, clusterId: number): Promise
     .first<{ d: number }>();
   const distinct = distinctRow?.d ?? 0;
 
-  const coverage = Math.min(1, distinct / 5);
+  const weightedSum = await weightedDistinctSourceSum(env.DB, clusterId, 'all');
+  const coverage = Math.min(1, weightedSum / 5);
   const novelty = noveltyFromFirstSeen(row.first_seen);
   const topic = inferTopicFromTitle(row.representative_title);
   const tw = topicalWeight(topic);
 
   // Strategy A — only spend embeddings/LLM once a cluster crosses candidacy.
   let market: Awaited<ReturnType<typeof matchClusterToMarkets>> = null;
-  if (distinct >= 3) {
+  if (weightedSum >= MIN_WEIGHTED_SOURCE_COVERAGE) {
     try {
       market = await matchClusterToMarkets(env, row.representative_title, '');
     } catch (e) {
@@ -181,6 +187,7 @@ export async function refreshClusterScores(env: Env, clusterId: number): Promise
       llm_reasoning_log: row.llm_reasoning_log,
     },
     distinct,
+    weightedSum,
     coverage,
     novelty,
     polymarketStrong,
@@ -211,7 +218,7 @@ export async function refreshClusterScores(env: Env, clusterId: number): Promise
        WHERE id = ?`,
     )
     .bind(
-      distinct,
+      weightedSum,
       coverage,
       novelty,
       surprise,

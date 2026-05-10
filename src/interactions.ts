@@ -7,10 +7,11 @@ import {
 import type { DiscordEmbed } from './discord';
 import {
   DIGEST_SOURCE_WINDOW_HOURS,
-  MIN_DISTINCT_SOURCES,
   MIN_FINAL_SCORE,
+  MIN_WEIGHTED_SOURCE_COVERAGE,
 } from './digest_constants';
 import type { Env } from './env';
+import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
 
 const DISCORD_API = 'https://discord.com/api/v10';
 
@@ -29,7 +30,7 @@ type DiscordInteraction = {
 type TopNewsRow = ClusterRowForEmbed & {
   posted_digest_id: number | null;
   posted_digest_at: string | null;
-  distinct_sources_12h: number;
+  weighted_sources_12h: number;
   grace_ok: number;
   last_updated: string;
 };
@@ -84,8 +85,8 @@ function digestEligible(r: TopNewsRow): boolean {
   if (r.final_score < MIN_FINAL_SCORE) return false;
   if (!r.grace_ok) return false;
   if (r.flow_type === 'market_driven') return true;
-  const distinct = Number(r.distinct_sources_12h);
-  return Number.isFinite(distinct) && distinct >= MIN_DISTINCT_SOURCES;
+  const w = Number(r.weighted_sources_12h);
+  return Number.isFinite(w) && w >= MIN_WEIGHTED_SOURCE_COVERAGE;
 }
 
 function statusLine(r: TopNewsRow): string {
@@ -116,16 +117,13 @@ async function queryTopNews(
   count: number,
   topic: string | null,
 ): Promise<TopNewsRow[]> {
+  const weightedSub = sqlWeightedSourceSumInWindow();
+  const windowBind = bindDigestSourceWindow();
   let sql = `SELECT c.id, c.representative_title, c.final_score, c.topic, c.flow_type,
                     c.polymarket_slug, c.polymarket_price, c.polymarket_price_24h_ago,
                     c.llm_reasoning_log, c.posted_digest_id, c.last_updated,
                     p.digest_timestamp AS posted_digest_at,
-                    (
-                      SELECT COUNT(DISTINCT a.source)
-                      FROM articles a
-                      WHERE a.cluster_id = c.id
-                        AND datetime(a.fetched_at) >= datetime('now', ?)
-                    ) AS distinct_sources_12h,
+                    ${weightedSub} AS weighted_sources_12h,
                     (
                       CASE
                         WHEN ? IS NULL THEN 1
@@ -137,12 +135,7 @@ async function queryTopNews(
              LEFT JOIN posts p ON p.id = c.posted_digest_id
              WHERE datetime(c.last_updated) >= datetime('now', ?)`;
 
-  const binds: unknown[] = [
-    `-${DIGEST_SOURCE_WINDOW_HOURS} hours`,
-    lastDigestIso,
-    lastDigestIso,
-    `-${DIGEST_SOURCE_WINDOW_HOURS} hours`,
-  ];
+  const binds: unknown[] = [windowBind, lastDigestIso, lastDigestIso, windowBind];
 
   if (topic) {
     sql += ` AND lower(c.topic) = lower(?)`;

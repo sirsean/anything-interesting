@@ -4,12 +4,8 @@ import {
   marketDrivenDescription,
   type ClusterRowForEmbed,
 } from './discord_cluster_embed';
-import {
-  DIGEST_SOURCE_WINDOW_HOURS,
-  EXCEPTIONAL_SCORE,
-  MIN_DISTINCT_SOURCES,
-  MIN_FINAL_SCORE,
-} from './digest_constants';
+import { EXCEPTIONAL_SCORE, MIN_FINAL_SCORE, MIN_WEIGHTED_SOURCE_COVERAGE } from './digest_constants';
+import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
 import type { Env } from './env';
 import { MODEL_GLM_FLASH, runLLM, textFromChatOut } from './llm';
 
@@ -55,6 +51,9 @@ async function loadCandidateClusters(db: D1Database, lastDigestIso: string | nul
 
   // Market-driven items get to bypass the distinct-source gate; the price-move
   // signal stands in for source coverage by design (see INITIAL.md Strategy B).
+  const weightedSub = sqlWeightedSourceSumInWindow();
+  const windowBind = bindDigestSourceWindow();
+
   const { results } = await db
     .prepare(
       `SELECT c.id, c.representative_title, c.final_score, c.source_weight_sum, c.topic,
@@ -66,12 +65,7 @@ async function loadCandidateClusters(db: D1Database, lastDigestIso: string | nul
          AND (${graceSql})
          AND (
            c.flow_type = 'market_driven'
-           OR (
-             SELECT COUNT(DISTINCT a.source)
-             FROM articles a
-             WHERE a.cluster_id = c.id
-               AND datetime(a.fetched_at) >= datetime('now', ?)
-           ) >= ?
+           OR ${weightedSub} >= ?
          )
        ORDER BY c.final_score DESC, c.last_updated DESC
        LIMIT 8`,
@@ -79,8 +73,8 @@ async function loadCandidateClusters(db: D1Database, lastDigestIso: string | nul
     .bind(
       MIN_FINAL_SCORE,
       ...(lastDigestIso == null ? [] : [lastDigestIso]),
-      `-${DIGEST_SOURCE_WINDOW_HOURS} hours`,
-      MIN_DISTINCT_SOURCES,
+      windowBind,
+      MIN_WEIGHTED_SOURCE_COVERAGE,
     )
     .all<Row>();
 
@@ -117,8 +111,30 @@ export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
     return;
   }
 
-  const embeds: DiscordEmbed[] = [];
-  for (const c of clusters) {
+  const label = formatDigestLabel(hourCT);
+
+  const digestTs = new Date().toISOString();
+  const clusterIdsJson = JSON.stringify(clusters.map((c) => c.id));
+
+  const postRow = await env.DB
+    .prepare(
+      `INSERT INTO posts (digest_timestamp, cluster_ids, message_id, channel_kind)
+       VALUES (?, ?, NULL, 'webhook')
+       RETURNING id`,
+    )
+    .bind(digestTs, clusterIdsJson)
+    .first<{ id: number }>();
+
+  const postId = postRow?.id;
+  if (!postId) {
+    console.error('Failed to insert posts row before Discord delivery');
+    return;
+  }
+
+  let firstMessageId: string | undefined;
+
+  for (let i = 0; i < clusters.length; i++) {
+    const c = clusters[i];
     const isMarketDriven = c.flow_type === 'market_driven';
     const top = await env.DB
       .prepare(
@@ -137,41 +153,44 @@ export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
       ? marketDrivenDescription(c.representative_title, c)
       : await summarizeForDiscord(env, title, url, c.representative_title);
 
-    embeds.push(
-      await buildClusterDiscordEmbed({
-        db: env.DB,
-        row: c,
-        description: desc,
-        footerTag: 'M3',
-      }),
-    );
+    const embed = await buildClusterDiscordEmbed({
+      db: env.DB,
+      row: c,
+      description: desc,
+      footerTag: 'M3',
+    });
+    const hint = '👍/👎 on this message tunes outlet weights (M5).';
+    embed.footer.text = `${embed.footer.text} · ${hint}`.slice(0, 2048);
+
+    const content =
+      i === 0
+        ? `${label} digest — ${clusters.length} item${clusters.length === 1 ? '' : 's'}`
+        : '';
+
+    const posted = await postDigestWebhook(webhook, content, [embed]);
+    if (!posted.ok) {
+      console.error('Discord webhook failed', posted.status, posted.body, 'cluster', c.id);
+      await env.DB.prepare('DELETE FROM post_cluster_messages WHERE post_id = ?').bind(postId).run();
+      await env.DB.prepare('DELETE FROM posts WHERE id = ?').bind(postId).run();
+      return;
+    }
+
+    const mid = posted.messageId;
+    if (mid) {
+      if (i === 0) firstMessageId = mid;
+      await env.DB
+        .prepare(
+          `INSERT INTO post_cluster_messages (post_id, cluster_id, message_id) VALUES (?, ?, ?)`,
+        )
+        .bind(postId, c.id, mid)
+        .run();
+    }
   }
 
-  const label = formatDigestLabel(hourCT);
-  const content = `${label} digest — ${embeds.length} item${embeds.length === 1 ? '' : 's'}`;
-
-  const posted = await postDigestWebhook(webhook, content, embeds);
-  if (!posted.ok) {
-    console.error('Discord webhook failed', posted.status, posted.body);
-    return;
-  }
-
-  const digestTs = new Date().toISOString();
-  const clusterIds = JSON.stringify(clusters.map((c) => c.id));
-
-  const row = await env.DB.prepare(
-    `INSERT INTO posts (digest_timestamp, cluster_ids, message_id, channel_kind)
-     VALUES (?, ?, ?, 'webhook')
-     RETURNING id`,
-  )
-    .bind(digestTs, clusterIds, posted.messageId ?? null)
-    .first<{ id: number }>();
-
-  const postId = row?.id;
-  if (!postId) {
-    console.error('Failed to insert posts row after Discord success');
-    return;
-  }
+  await env.DB
+    .prepare(`UPDATE posts SET message_id = ? WHERE id = ?`)
+    .bind(firstMessageId ?? null, postId)
+    .run();
 
   const stmt = env.DB.prepare('UPDATE clusters SET posted_digest_id = ? WHERE id = ?');
   await env.DB.batch(clusters.map((c) => stmt.bind(postId, c.id)));

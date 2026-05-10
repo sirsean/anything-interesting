@@ -23,8 +23,15 @@
 
 ## Acceptance criteria
 
-- Reactions measurably change downstream scores after N ingests (document test scenario).
-- Weights remain bounded; no single user can dominate without repeated signal (consider rate limits / dedup if needed—document).
+- [ ] Reactions measurably change downstream scores after N ingests (waiting on scheduled digest + reaction poll smoke check).
+- [x] Weights remain bounded; no single user can dominate without repeated signal (dedupe by `message_id`, `user_id`, and reaction; per-source weights clamp to `[0.5, 1.5]` with smoothing).
+
+## Operator wiring
+
+- [x] D1 `0005_m5_feedback.sql` applied local + remote.
+- [x] `DISCORD_BOT_TOKEN` configured for the Worker; bot installed in the digest channel with message history access.
+- [x] Worker deployed after M5 wiring.
+- [ ] Cron smoke check: wait for scheduled run to post/baseline digest messages, then confirm new 👍/👎 reactions update `feedback` / `source_weights`.
 
 ---
 

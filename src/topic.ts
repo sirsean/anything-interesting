@@ -1,15 +1,19 @@
-/** Topical multipliers from INITIAL.md (multiplicative on final_score). */
-const TOPICAL: Record<string, number> = {
-  geopolitics: 0.4,
-  politics: 0.2,
-  economics: 0.2,
-  technology: 0.2,
-  general: 0.2,
+/**
+ * Per-topic multipliers on the inner [0,1] score (centered ~1.0).
+ * Slightly favor geopolitics vs uncategorized; all values stay near 1 so
+ * `final_score` can reach digest thresholds (unlike legacy 0.2–0.4 weights).
+ */
+const TOPICAL_MULT: Record<string, number> = {
+  geopolitics: 1.04,
+  politics: 1.02,
+  economics: 1.02,
+  technology: 1.02,
+  general: 0.98,
 };
 
 export function topicalWeight(topic: string): number {
   const k = topic.toLowerCase().trim();
-  return TOPICAL[k] ?? TOPICAL.general;
+  return TOPICAL_MULT[k] ?? TOPICAL_MULT.general;
 }
 
 /**

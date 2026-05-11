@@ -40,7 +40,7 @@ export async function runScheduledTick(env: Env): Promise<void> {
   try {
     const m = await runMarketSnapshotsAndStrategyB(env);
     console.log(
-      `snapshots done snapshotted=${m.snapshotted} flagged=${m.flagged} market_driven=${m.market_driven}`,
+      `snapshots done snapshotted=${m.snapshotted} flagged=${m.flagged} market_driven=${m.marketDriven}`,
     );
   } catch (e) {
     console.error('snapshots/strategy-B error', e);

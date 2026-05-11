@@ -196,7 +196,10 @@ export async function refreshClusterScores(env: Env, clusterId: number): Promise
 
   const llm = j.llm;
   const surprise = market?.surprise ?? 0;
-  const final = tw * (0.1 * coverage + 0.15 * novelty + 0.3 * surprise + 0.45 * llm);
+  // Strategy A Polymarket match is often sparse; keep surprise on the row for UI
+  // but do not fold it into digest ranking until the signal is reliable again.
+  const inner = 0.15 * coverage + 0.25 * novelty + 0.6 * llm;
+  const final = Math.min(1, inner * tw);
 
   await env.DB
     .prepare(

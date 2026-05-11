@@ -226,7 +226,8 @@ async function upsertMarketDrivenCluster(
   const llm = explanation.score;
   const coverage = Math.min(1, hits.length / 3);
   const novelty = 1;
-  const final = tw * (0.1 * coverage + 0.15 * novelty + 0.3 * surprise + 0.45 * llm);
+  const inner = 0.1 * coverage + 0.15 * novelty + 0.3 * surprise + 0.45 * llm;
+  const final = Math.min(1, inner * tw);
 
   const repTitle = market.title.slice(0, 500);
   const log = JSON.stringify({

@@ -28,7 +28,7 @@ async function recordKimiCall(env: Env): Promise<void> {
   await env.CONFIG.put(key, String(n + 1), { expirationTtl: 86400 * 2 });
 }
 
-function noveltyFromFirstSeen(firstSeen: string): number {
+export function noveltyFromFirstSeen(firstSeen: string): number {
   const t = Date.parse(firstSeen);
   if (!Number.isFinite(t)) return 0.5;
   const hours = (Date.now() - t) / 3600000;
@@ -42,7 +42,7 @@ type ClusterRow = {
   llm_reasoning_log: string | null;
 };
 
-function parseJudgment(raw: unknown): { score: number; reason: string } {
+export function parseJudgment(raw: unknown): { score: number; reason: string } {
   const txt = textFromChatOut(raw);
   const m = txt.match(/\{[\s\S]*\}/);
   if (!m) return { score: 0.45, reason: txt.slice(0, 500) };

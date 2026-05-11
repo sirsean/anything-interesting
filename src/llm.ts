@@ -67,6 +67,7 @@ export async function runEmbed(env: Env, texts: string[]): Promise<number[][]> {
 export type RoleMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
 export function textFromChatOut(raw: unknown): string {
+  if (raw == null || typeof raw !== 'object') return '';
   const o = raw as {
     choices?: Array<{ message?: { content?: string | null } | null }>;
   };

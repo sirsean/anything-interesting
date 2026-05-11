@@ -65,7 +65,10 @@ async function verifyDiscordSignature(
   }
 }
 
-function parseTopNewsOptions(data: DiscordInteraction['data']): { count: number; topic: string | null } {
+export function parseTopNewsOptions(data: DiscordInteraction['data']): {
+  count: number;
+  topic: string | null;
+} {
   let count = 3;
   let topic: string | null = null;
   for (const o of data?.options ?? []) {

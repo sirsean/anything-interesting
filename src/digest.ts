@@ -9,7 +9,7 @@ import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_w
 import type { Env } from './env';
 import { MODEL_GLM_FLASH, runLLM, textFromChatOut } from './llm';
 
-type Row = ClusterRowForEmbed & { source_weight_sum: number };
+export type DigestCandidateRow = ClusterRowForEmbed & { source_weight_sum: number };
 
 async function summarizeForDiscord(
   env: Env,
@@ -43,7 +43,7 @@ async function summarizeForDiscord(
   return `${rep.slice(0, 220)}${rep.length > 220 ? '…' : ''}`;
 }
 
-async function loadCandidateClusters(db: D1Database, lastDigestIso: string | null): Promise<Row[]> {
+async function loadCandidateClusters(db: D1Database, lastDigestIso: string | null): Promise<DigestCandidateRow[]> {
   const graceSql =
     lastDigestIso == null
       ? `1 = 1`
@@ -76,12 +76,13 @@ async function loadCandidateClusters(db: D1Database, lastDigestIso: string | nul
       windowBind,
       MIN_WEIGHTED_SOURCE_COVERAGE,
     )
-    .all<Row>();
+    .all<DigestCandidateRow>();
 
   return results ?? [];
 }
 
-function pickDigestRows(rows: Row[]): Row[] {
+/** Caps digest items at 3, or 4 when the fourth cluster is exceptionally scored. */
+export function pickDigestRows(rows: DigestCandidateRow[]): DigestCandidateRow[] {
   if (rows.length <= 3) return rows;
   const fourth = rows[3];
   if (fourth && fourth.final_score >= EXCEPTIONAL_SCORE) {
@@ -90,7 +91,7 @@ function pickDigestRows(rows: Row[]): Row[] {
   return rows.slice(0, 3);
 }
 
-function formatDigestLabel(hourCT: string): string {
+export function formatDigestLabel(hourCT: string): string {
   const padded = hourCT.padStart(2, '0');
   return `${padded}:00 CT`;
 }

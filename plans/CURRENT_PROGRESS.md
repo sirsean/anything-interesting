@@ -89,4 +89,8 @@ Starter feeds are Reuters (`feeds.reuters.com/reuters/topNews`), BBC World, and 
 
 ---
 
+**2026-05-10:** Added Vitest unit suite (`npm test` / `npm run test:watch`) covering time gates, RSS/Discord helpers, Polymarket normalization, digest selection, scoring/LLM parsing, source-weight math, Discord interactions (signature + `/topnews` options), and Worker `/health`.
+
+---
+
 _Last updated: 2026-05-10 — M4/M5 operator wiring complete. Waiting on scheduled cron smoke checks via `npx wrangler tail anything-interesting`: ingest/snapshot logs, digest post or quiet run, and M5 reaction polling/source-weight update after reactions._

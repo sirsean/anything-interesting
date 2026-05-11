@@ -10,7 +10,7 @@ compatibility_date = "2026-05-01"
 # `/interactions`) flowing through the Worker without an asset lookup.
 [assets]
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/health", "/interactions"]
+run_worker_first = ["/api/*", "/health", "/interactions", "/__scheduled"]
 
 [triggers]
 crons = ["0 * * * *"]
@@ -28,11 +28,13 @@ id = "cd4babf1d62b41e286d1972de115b054"
 [[vectorize]]
 binding = "HEADLINES"
 index_name = "headlines"
+remote = true
 
 # Markets index: `npx wrangler vectorize create markets --dimensions=1024 --metric=cosine`
 [[vectorize]]
 binding = "MARKETS"
 index_name = "markets"
+remote = true
 
 [ai]
 binding = "AI"

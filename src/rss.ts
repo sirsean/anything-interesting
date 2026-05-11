@@ -23,6 +23,20 @@ function pickText(v: unknown): string | null {
 function pickLink(item: Record<string, unknown>): string | null {
   const link = item.link;
   if (typeof link === 'string') return link.trim() || null;
+  if (Array.isArray(link)) {
+    for (const L of link) {
+      if (L && typeof L === 'object') {
+        const o = L as Record<string, unknown>;
+        if (o['@_rel'] === 'alternate' && typeof o['@_href'] === 'string') return o['@_href'].trim();
+      }
+    }
+    for (const L of link) {
+      if (L && typeof L === 'object') {
+        const href = (L as Record<string, unknown>)['@_href'];
+        if (typeof href === 'string') return href.trim();
+      }
+    }
+  }
   if (link && typeof link === 'object') {
     const o = link as Record<string, unknown>;
     const href = o['@_href'] ?? o.href;
@@ -32,6 +46,30 @@ function pickLink(item: Record<string, unknown>): string | null {
   }
   const guid = pickText(item.guid);
   if (guid && guid.startsWith('http')) return guid;
+  const id = pickText(item.id);
+  if (id && id.startsWith('http')) return id;
+  return null;
+}
+
+function normalizeItems(raw: unknown): Record<string, unknown>[] {
+  if (raw == null) return [];
+  return Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [raw as Record<string, unknown>];
+}
+
+function itemsFromParsedDoc(doc: Record<string, unknown>): Record<string, unknown>[] | null {
+  const rss2 = doc.rss as Record<string, unknown> | undefined;
+  const ch = rss2?.channel as Record<string, unknown> | undefined;
+  if (ch?.item != null) {
+    return normalizeItems(ch.item);
+  }
+  const rdf = doc['rdf:RDF'] as Record<string, unknown> | undefined;
+  if (rdf?.item != null) {
+    return normalizeItems(rdf.item);
+  }
+  const atom = doc.feed as Record<string, unknown> | undefined;
+  if (atom?.entry != null) {
+    return normalizeItems(atom.entry);
+  }
   return null;
 }
 
@@ -49,26 +87,22 @@ export async function fetchFeedItems(source: FeedSource): Promise<ParsedItem[]> 
   const xml = await res.text();
   const parser = new XMLParser({ ignoreAttributes: false, trimValues: true });
   const doc = parser.parse(xml) as Record<string, unknown>;
-  const rss = (doc.rss as Record<string, unknown> | undefined)?.channel as
-    | Record<string, unknown>
-    | undefined;
-  if (!rss) {
-    console.error(`RSS parse: no channel for ${source.id}`);
+  const list = itemsFromParsedDoc(doc);
+  if (!list || list.length === 0) {
+    console.error(`RSS parse: no recognized feed shape for ${source.id}`);
     return [];
   }
-  const rawItems = rss.item;
-  const list: Record<string, unknown>[] = Array.isArray(rawItems)
-    ? (rawItems as Record<string, unknown>[])
-    : rawItems
-      ? [rawItems as Record<string, unknown>]
-      : [];
 
   const out: ParsedItem[] = [];
   for (const item of list) {
     const title = pickText(item.title);
     const url = pickLink(item);
     if (!title || !url) continue;
-    const pub = pickText(item.pubDate) ?? pickText(item.published) ?? pickText(item.updated);
+    const pub =
+      pickText(item.pubDate) ??
+      pickText(item.published) ??
+      pickText(item.updated) ??
+      pickText(item['dc:date']);
     let publishedAt: string | null = null;
     if (pub) {
       const d = new Date(pub);

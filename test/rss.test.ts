@@ -48,8 +48,45 @@ describe('rss', () => {
     expect(await fetchFeedItems(source)).toEqual([]);
   });
 
-  it('returns empty array when channel is missing', async () => {
+  it('returns empty array when feed has no items', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<rss></rss>', { status: 200 })));
     expect(await fetchFeedItems(source)).toEqual([]);
+  });
+
+  it('parses Atom feed entry with link alternate href', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Atom story</title>
+    <link rel="alternate" type="text/html" href="https://example.com/a"/>
+    <updated>2024-02-01T10:00:00Z</updated>
+  </entry>
+</feed>`;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(xml, { status: 200 })));
+
+    const items = await fetchFeedItems(source);
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe('Atom story');
+    expect(items[0].url).toBe('https://example.com/a');
+    expect(items[0].publishedAt).toBe('2024-02-01T10:00:00.000Z');
+  });
+
+  it('parses RSS 1.0 RDF items with dc:date', async () => {
+    const xml = `<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel rdf:about="https://ex/ch"><title>C</title></channel>
+  <item rdf:about="https://ex/1">
+    <title>RDF item</title>
+    <link>https://ex/article</link>
+    <dc:date>2024-03-01T12:00:00Z</dc:date>
+  </item>
+</rdf:RDF>`;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(xml, { status: 200 })));
+
+    const items = await fetchFeedItems(source);
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe('RDF item');
+    expect(items[0].url).toBe('https://ex/article');
+    expect(items[0].publishedAt).toBe('2024-03-01T12:00:00.000Z');
   });
 });

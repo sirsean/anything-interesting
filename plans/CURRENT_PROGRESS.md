@@ -10,7 +10,7 @@
 
 | Order | File | Summary |
 | ----- | ---- | ------- |
-| M1 | [`MILESTONE-01-cloudflare-mvp.md`](MILESTONE-01-cloudflare-mvp.md) | Wrangler, D1/KV/Vectorize bindings, hourly cron, 3× RSS, dedup, naive clustering, webhook digest @ 05/15/18 CT |
+| M1 | [`MILESTONE-01-cloudflare-mvp.md`](MILESTONE-01-cloudflare-mvp.md) | Wrangler, D1/KV/Vectorize bindings, hourly cron, multi-outlet RSS (`M1_FEEDS`), dedup, naive clustering, webhook digest @ 05/15/18 CT |
 | M2 | [`MILESTONE-02-workers-ai-scoring.md`](MILESTONE-02-workers-ai-scoring.md) | AI Gateway, BGE + Vectorize clustering, GLM rerank/summary, Kimi judgment, topical weights, 0.60 / cap-3 digest |
 | M3 | [`MILESTONE-03-polymarket.md`](MILESTONE-03-polymarket.md) | Gamma + CLOB, watchlist, market embeddings, Strategy A + B, 📈 market-driven items |
 | M4 | [`MILESTONE-04-discord-slash-topnews.md`](MILESTONE-04-discord-slash-topnews.md) | Slash `/topnews`, ed25519 verify, PING/PONG, D1 queries, embeds + status badges |
@@ -23,7 +23,7 @@
 
 | Milestone | State | Owner / notes |
 | --------- | ----- | ------------- |
-| M1 | **Implementation complete; prod smoke optional** | Code matches M1 checklist (cron, D1/KV, 3× RSS, dedup, Jaccard clusters, CT digest gate, webhook + ≥3 sources / 12h). Vectorize deferred to M2. **2026-05-10:** Verified `Intl` returns padded hours (`"05"`); digest gate updated to numeric compare so 05:00 CT runs. |
+| M1 | **Implementation complete; prod smoke optional** | Code matches M1 checklist (cron, D1/KV, multi-outlet RSS, dedup, Jaccard clusters, CT digest gate, webhook + ≥3 sources / 12h). Vectorize deferred to M2. **2026-05-10:** Verified `Intl` returns padded hours (`"05"`); digest gate updated to numeric compare so 05:00 CT runs. **2026-05-11:** Twelve RSS outlets in `src/sources.ts` (see RSS note), including three `rss.politico.com` section feeds. |
 | M2 | **Implementation complete; prod smoke optional** | Shipped: `[ai]`, optional `AI_GATEWAY_ID`, Vectorize `headlines` (1024 cosine), BGE + NN clustering + GLM rerank band, Kimi judgment + INITIAL scoring + digest rules (≥0.60, grace, cap 3/4), GLM summaries. **2026-05-10:** Vectorize index created, D1 `0002` applied local+remote, Worker deployed (`anything-interesting`). Optional: `wrangler tail` once at a digest hour to confirm webhook + logs. |
 | M3 | **Implementation complete; deployed; prod smoke optional** | Shipped 2026-05-10: Gamma + CLOB clients (`src/polymarket.ts`), watchlist with deterministic+Kimi filter (`src/watchlist.ts`), hourly `market_snapshots` writer + Strategy B sweep (`src/snapshots.ts`), Strategy A match wired into `refreshClusterScores` (`src/match_markets.ts`), digest embeds with Polymarket field + 📈 prefix + relaxed source gate for market-driven items, `0003_m3_polymarket.sql` migration, `MARKETS` Vectorize binding. **2026-05-10:** Vectorize `markets` index created; D1 `0003` applied local + remote; Worker deployed (version `cd7e14c5-ed29-49b3-8bf3-3cffbd6e0d8c`); `/health` 200. Optional: `npx wrangler tail` next hour to confirm `watchlist refresh persisted=…` + `snapshots done …` lines. |
 | M4 | **Implementation + operator wiring complete; smoke pending** | Code: `POST /interactions` (`src/interactions.ts`) — Web Crypto ed25519 verify (`DISCORD_PUBLIC_KEY`), PING `type: 1`, `/topnews` deferred `type: 5` + follow-up to `webhooks/{app}/{token}` (no bot token in Worker), D1 last-12h query + optional topic, embeds via shared `discord_cluster_embed.ts`, Digest status badges (`posted` / `upcoming` / `below threshold`). Registration: `npm run discord:register-topnews` (`scripts/register-topnews.mjs`, bot token env-only). Migration `0004_m4_topnews_index.sql`. **2026-05-10:** operator wiring completed: Discord app + bot, Interactions URL, `DISCORD_PUBLIC_KEY`, command registration, bot install, D1 `0004`, and deploy. Waiting on live `/topnews` / log smoke evidence. |
@@ -91,11 +91,11 @@
 
 - **Production:** At the top of an hour when Chicago is 05:00, 15:00, or 18:00, confirm a single webhook message with header like `05:00 CT digest — N items` (or a quiet run if no cluster has ≥3 distinct sources with `fetched_at` in the last 12h).
 - **Logs:** `npx wrangler tail anything-interesting` and look for `scheduled tick Chicago hour=…`, `ingest done …`, and either `Digest: no eligible clusters` or `Digest posted post_id=…`.
-- **Local / `wrangler dev`:** use `npx wrangler dev --local --test-scheduled` and open `/__scheduled`. Outbound RSS fetches require working DNS from the machine running workerd (some environments block or fail lookups).
+- **Local / production-shaped Worker:** `npm run build` then from repo root `npx wrangler dev --config dist/anything_interesting/wrangler.json --persist-to "$(pwd)/.wrangler/state"` so local D1 matches `npm run db:local`. **Reset data:** `npm run db:reset-local` (runs `scripts/reset-local-d1.sql`). Trigger ingest + rest of the hourly pipeline with `curl http://127.0.0.1:8787/__scheduled` — returns **202** immediately while work runs in `waitUntil` (same steps as cron; can take many minutes). Check logs for `ingest done` or `wrangler d1 execute anything-interesting --local --command "SELECT COUNT(*) FROM articles"`. `[[vectorize]]` uses `remote = true` so headline clustering works under workerd. Outbound RSS still needs working DNS from workerd.
 
 ### RSS note
 
-Starter feeds in `src/sources.ts` are **The Guardian** World (`theguardian.com/world/rss`), **BBC** World, and **NPR** Topics: News (`feeds.npr.org/1001/rss.xml`). Reuters and AP canonical RSS URLs were dropped (401/530 from Workers); swap in other `INITIAL.md` feeds if any of these degrade.
+Feeds in `src/sources.ts` (`M1_FEEDS`): **The Guardian** World, **BBC** World, **NPR** Topics: News, **Foreign Policy**, **War on the Rocks**, **Ars Technica**, **The Verge**, **Al Jazeera** English (all topics), **DW** English world, **Politico** Defense / Economy / Politics (`rss.politico.com/*.xml`; distinct `source` labels per section). Reuters and AP canonical RSS URLs were dropped (401/530 from Workers); `www.politico.com/rss/*` can still 403 — prefer `rss.politico.com`. Swap in other `INITIAL.md` feeds if any of these degrade.
 
 ---
 
@@ -103,4 +103,4 @@ Starter feeds in `src/sources.ts` are **The Guardian** World (`theguardian.com/w
 
 ---
 
-_Last updated: 2026-05-10 — M6 implementation complete: Vite + React newspaper UI on the same Worker, read-only `/api/*` over the existing analyzed pool, midcentury-modern design, status-label parity with `/topnews` extracted into `src/digest_status.ts`. 81/81 tests green, both tsconfigs clean, `vite build` + `wrangler deploy --dry-run` green. **Open:** `npm run deploy` from a workstation with credentials, then browse `/` + `/api/stats`; M4/M5 cron smoke (ingest/snapshot logs, digest post or quiet run, reaction polling) is unchanged from before._
+_Last updated: 2026-05-11 — `M1_FEEDS` has twelve outlets including Politico section RSS on `rss.politico.com` (see RSS note). M6 and test suite unchanged otherwise (81/81 green). **Open:** `npm run deploy` from a workstation with credentials, then browse `/` + `/api/stats`; M4/M5 cron smoke (ingest/snapshot logs, digest post or quiet run, reaction polling) is unchanged from before._

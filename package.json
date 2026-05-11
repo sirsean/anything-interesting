@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:local": "wrangler d1 migrations apply anything-interesting --local",
+    "db:reset-local": "wrangler d1 execute anything-interesting --local --file scripts/reset-local-d1.sql",
     "db:remote": "wrangler d1 migrations apply anything-interesting --remote",
     "discord:register-topnews": "node scripts/register-topnews.mjs"
   },

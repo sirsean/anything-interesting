@@ -81,6 +81,15 @@ export async function pickClusterForHeadline(
     return { newCluster: true };
   }
 
+  // Vectorize can still reference a cluster removed from D1 (e.g. after a local DB reset).
+  const clusterRow = await db
+    .prepare('SELECT 1 AS x FROM clusters WHERE id = ?')
+    .bind(clusterId)
+    .first<{ x: number }>();
+  if (!clusterRow) {
+    return { newCluster: true };
+  }
+
   if (score > COSINE_SAME) {
     return { clusterId };
   }

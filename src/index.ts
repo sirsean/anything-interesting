@@ -8,9 +8,80 @@ import { syncDigestReactions } from './reaction_sync';
 import { runMarketSnapshotsAndStrategyB } from './snapshots';
 import { refreshWatchlistIfDue } from './watchlist';
 
+/** Same work as the hourly cron (`scheduled`). Used by `GET /__scheduled` on loopback in wrangler dev. */
+export async function runScheduledTick(env: Env): Promise<void> {
+  const hourCT = getChicagoHour();
+  console.log(`scheduled tick Chicago hour=${hourCT}`);
+
+  // Watchlist runs once per ~24h regardless of which hour wins; cheap no-op
+  // when fresh (just a KV read).
+  try {
+    const slugs = await refreshWatchlistIfDue(env);
+    if (slugs.length > 0) {
+      console.log(`watchlist refresh persisted=${slugs.length}`);
+    }
+  } catch (e) {
+    console.error('watchlist refresh error', e);
+  }
+
+  try {
+    await syncDigestReactions(env);
+  } catch (e) {
+    console.error('reaction sync error', e);
+  }
+
+  try {
+    const stats = await runIngest(env);
+    console.log(`ingest done inserted=${stats.inserted} skippedDup=${stats.skippedDup}`);
+  } catch (e) {
+    console.error('ingest error', e);
+  }
+
+  try {
+    const m = await runMarketSnapshotsAndStrategyB(env);
+    console.log(
+      `snapshots done snapshotted=${m.snapshotted} flagged=${m.flagged} market_driven=${m.market_driven}`,
+    );
+  } catch (e) {
+    console.error('snapshots/strategy-B error', e);
+  }
+
+  if (!isDigestHour()) {
+    return;
+  }
+
+  try {
+    await deliverDigest(env, hourCT);
+  } catch (e) {
+    console.error('digest error', e);
+  }
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
+    // Local dev: SPA assets would otherwise swallow `/__scheduled`. Only loopback — not deployed abuse.
+    if (
+      req.method === 'GET' &&
+      url.pathname === '/__scheduled' &&
+      (url.hostname === '127.0.0.1' || url.hostname === 'localhost')
+    ) {
+      // Full tick can take many minutes (RSS × embeds × optional GLM/Kimi). Do not block the HTTP response.
+      ctx.waitUntil(
+        runScheduledTick(env).catch((e) => {
+          console.error('runScheduledTick failed', e);
+        }),
+      );
+      return Response.json(
+        {
+          ok: true,
+          accepted: true,
+          note:
+            'Hourly pipeline running in background (waitUntil). Watch wrangler logs for `ingest done` or query local D1 after a few minutes.',
+        },
+        { status: 202 },
+      );
+    }
     if (req.method === 'GET' && url.pathname === '/health') {
       return Response.json({ ok: true, service: 'anything-interesting' });
     }
@@ -29,50 +100,6 @@ export default {
   },
 
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
-    const hourCT = getChicagoHour();
-    console.log(`scheduled tick Chicago hour=${hourCT}`);
-
-    // Watchlist runs once per ~24h regardless of which hour wins; cheap no-op
-    // when fresh (just a KV read).
-    try {
-      const slugs = await refreshWatchlistIfDue(env);
-      if (slugs.length > 0) {
-        console.log(`watchlist refresh persisted=${slugs.length}`);
-      }
-    } catch (e) {
-      console.error('watchlist refresh error', e);
-    }
-
-    try {
-      await syncDigestReactions(env);
-    } catch (e) {
-      console.error('reaction sync error', e);
-    }
-
-    try {
-      const stats = await runIngest(env);
-      console.log(`ingest done inserted=${stats.inserted} skippedDup=${stats.skippedDup}`);
-    } catch (e) {
-      console.error('ingest error', e);
-    }
-
-    try {
-      const m = await runMarketSnapshotsAndStrategyB(env);
-      console.log(
-        `snapshots done snapshotted=${m.snapshotted} flagged=${m.flagged} market_driven=${m.marketDriven}`,
-      );
-    } catch (e) {
-      console.error('snapshots/strategy-B error', e);
-    }
-
-    if (!isDigestHour()) {
-      return;
-    }
-
-    try {
-      await deliverDigest(env, hourCT);
-    } catch (e) {
-      console.error('digest error', e);
-    }
+    await runScheduledTick(env);
   },
 };

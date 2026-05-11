@@ -71,6 +71,41 @@ describe('rss', () => {
     expect(items[0].publishedAt).toBe('2024-02-01T10:00:00.000Z');
   });
 
+  it('parses Verge-style Atom title (type html) and single link object', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title type="html">Verge &amp; special headline</title>
+    <link rel="alternate" type="text/html" href="https://www.theverge.com/2026/5/11/12345/example"/>
+    <published>2026-05-11T12:00:00Z</published>
+  </entry>
+</feed>`;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(xml, { status: 200 })));
+
+    const items = await fetchFeedItems(source);
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe('Verge & special headline');
+    expect(items[0].url).toBe('https://www.theverge.com/2026/5/11/12345/example');
+    expect(items[0].publishedAt).toBe('2026-05-11T12:00:00.000Z');
+  });
+
+  it('parses Atom when the feed element uses an atom: prefix', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<atom:feed xmlns:atom="http://www.w3.org/2005/Atom">
+  <atom:entry>
+    <atom:title>Prefixed feed</atom:title>
+    <atom:link rel="alternate" href="https://example.com/p"/>
+    <atom:updated>2024-04-01T00:00:00Z</atom:updated>
+  </atom:entry>
+</atom:feed>`;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(xml, { status: 200 })));
+
+    const items = await fetchFeedItems(source);
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe('Prefixed feed');
+    expect(items[0].url).toBe('https://example.com/p');
+  });
+
   it('parses RSS 1.0 RDF items with dc:date', async () => {
     const xml = `<?xml version="1.0"?>
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">

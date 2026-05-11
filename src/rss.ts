@@ -56,20 +56,43 @@ function normalizeItems(raw: unknown): Record<string, unknown>[] {
   return Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [raw as Record<string, unknown>];
 }
 
+/** RFC 4287 Atom — `entry` lives under the feed root (often `feed`, sometimes `atom:feed`, etc.). */
+function atomFeedCandidates(doc: Record<string, unknown>): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const push = (v: unknown) => {
+    if (v && typeof v === 'object' && !out.includes(v as Record<string, unknown>)) {
+      out.push(v as Record<string, unknown>);
+    }
+  };
+  push(doc.feed);
+  push(doc['atom:feed']);
+  for (const [k, v] of Object.entries(doc)) {
+    if (k === '?xml' || k === 'feed' || k === 'atom:feed' || !v || typeof v !== 'object') continue;
+    if (/:feed$/i.test(k)) push(v);
+  }
+  return out;
+}
+
+function itemsFromAtom(doc: Record<string, unknown>): Record<string, unknown>[] | null {
+  for (const root of atomFeedCandidates(doc)) {
+    if (root.entry != null) return normalizeItems(root.entry);
+  }
+  return null;
+}
+
 function itemsFromParsedDoc(doc: Record<string, unknown>): Record<string, unknown>[] | null {
   const rss2 = doc.rss as Record<string, unknown> | undefined;
   const ch = rss2?.channel as Record<string, unknown> | undefined;
   if (ch?.item != null) {
     return normalizeItems(ch.item);
   }
-  const rdf = doc['rdf:RDF'] as Record<string, unknown> | undefined;
+  // RSS 1.0: root is `rdf:RDF` by default; with `removeNSPrefix` it becomes `RDF`.
+  const rdf = (doc['rdf:RDF'] ?? doc.RDF) as Record<string, unknown> | undefined;
   if (rdf?.item != null) {
     return normalizeItems(rdf.item);
   }
-  const atom = doc.feed as Record<string, unknown> | undefined;
-  if (atom?.entry != null) {
-    return normalizeItems(atom.entry);
-  }
+  const atomEntries = itemsFromAtom(doc);
+  if (atomEntries != null) return atomEntries;
   return null;
 }
 
@@ -77,7 +100,8 @@ export async function fetchFeedItems(source: FeedSource): Promise<ParsedItem[]> 
   const res = await fetch(source.url, {
     headers: {
       'User-Agent': UA,
-      Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+      Accept:
+        'application/atom+xml, application/rss+xml, application/rdf+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
     },
   });
   if (!res.ok) {
@@ -85,7 +109,12 @@ export async function fetchFeedItems(source: FeedSource): Promise<ParsedItem[]> 
     return [];
   }
   const xml = await res.text();
-  const parser = new XMLParser({ ignoreAttributes: false, trimValues: true });
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    trimValues: true,
+    // Strip xmlns so typical Atom roots stay `feed` / `entry`; RSS 1.0 may surface as `RDF`.
+    removeNSPrefix: true,
+  });
   const doc = parser.parse(xml) as Record<string, unknown>;
   const list = itemsFromParsedDoc(doc);
   if (!list || list.length === 0) {
@@ -102,7 +131,9 @@ export async function fetchFeedItems(source: FeedSource): Promise<ParsedItem[]> 
       pickText(item.pubDate) ??
       pickText(item.published) ??
       pickText(item.updated) ??
-      pickText(item['dc:date']);
+      pickText(item['dc:date']) ??
+      // RSS 1.0 + removeNSPrefix: `dc:date` becomes `date`
+      pickText(item.date);
     let publishedAt: string | null = null;
     if (pub) {
       const d = new Date(pub);

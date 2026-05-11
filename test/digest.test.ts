@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EXCEPTIONAL_SCORE } from '../src/digest_constants';
-import { formatDigestLabel, pickDigestRows, type DigestCandidateRow } from '../src/digest';
+import { digestClusterTitleLink, formatDigestLabel, pickDigestRows, type DigestCandidateRow } from '../src/digest';
+import type { Env } from '../src/env';
 
 function row(partial: Partial<DigestCandidateRow> & Pick<DigestCandidateRow, 'id' | 'final_score'>): DigestCandidateRow {
   return {
@@ -18,6 +19,20 @@ function row(partial: Partial<DigestCandidateRow> & Pick<DigestCandidateRow, 'id
 }
 
 describe('digest helpers', () => {
+  it('digestClusterTitleLink is undefined without PUBLIC_SITE_URL', () => {
+    expect(digestClusterTitleLink({} as Env, 7)).toBeUndefined();
+  });
+
+  it('digestClusterTitleLink joins base and cluster id', () => {
+    const env = { PUBLIC_SITE_URL: 'https://example.test' } as Env;
+    expect(digestClusterTitleLink(env, 42)).toBe('https://example.test/cluster/42');
+  });
+
+  it('digestClusterTitleLink trims base and strips trailing slashes', () => {
+    const env = { PUBLIC_SITE_URL: '  https://example.test///  ' } as Env;
+    expect(digestClusterTitleLink(env, 1)).toBe('https://example.test/cluster/1');
+  });
+
   it('formatDigestLabel pads single-digit hours', () => {
     expect(formatDigestLabel('5')).toBe('05:00 CT');
     expect(formatDigestLabel('15')).toBe('15:00 CT');

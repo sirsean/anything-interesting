@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  buildClusterDiscordEmbed,
   marketDrivenDescription,
   polymarketField,
   topicLabel,
@@ -20,15 +21,50 @@ function cluster(partial: Partial<ClusterRowForEmbed> & Pick<ClusterRowForEmbed,
   };
 }
 
+function mockDbForEmbed(): D1Database {
+  return {
+    prepare: vi.fn().mockImplementation((sql: string) => ({
+      bind: vi.fn().mockReturnValue({
+        all: vi.fn().mockResolvedValue({ results: [{ source: 'BBC' }] }),
+        first: vi.fn().mockResolvedValue(
+          sql.includes('FROM markets')
+            ? null
+            : { url: 'https://news.example/article', title: 'Wire headline' },
+        ),
+      }),
+    })),
+  } as unknown as D1Database;
+}
+
 describe('discord_cluster_embed', () => {
+  it('buildClusterDiscordEmbed uses titleLinkUrl as embed url when provided', async () => {
+    const embed = await buildClusterDiscordEmbed({
+      db: mockDbForEmbed(),
+      row: cluster({ id: 99, polymarket_slug: null }),
+      description: 'Body',
+      footerTag: 'M3',
+      titleLinkUrl: 'https://ui.example/cluster/99',
+    });
+    expect(embed.url).toBe('https://ui.example/cluster/99');
+  });
+
+  it('buildClusterDiscordEmbed falls back to top article url when titleLinkUrl omitted', async () => {
+    const embed = await buildClusterDiscordEmbed({
+      db: mockDbForEmbed(),
+      row: cluster({ id: 99, polymarket_slug: null }),
+      description: 'Body',
+      footerTag: 'M3',
+    });
+    expect(embed.url).toBe('https://news.example/article');
+  });
+
   it('topicLabel title-cases non-empty topics', () => {
     expect(topicLabel('')).toBe('General');
     expect(topicLabel('economics')).toBe('Economics');
   });
 
-  it('polymarketField renders dash when no slug', () => {
-    const f = polymarketField(cluster({ id: 1, polymarket_slug: null }), null);
-    expect(f.value).toBe('—');
+  it('polymarketField returns null when no slug', () => {
+    expect(polymarketField(cluster({ id: 1, polymarket_slug: null }), null)).toBeNull();
   });
 
   it('polymarketField includes markdown link and delta arrow', () => {
@@ -41,9 +77,21 @@ describe('discord_cluster_embed', () => {
       }),
       'Nice Title',
     );
+    expect(f).not.toBeNull();
+    if (f === null) throw new Error('expected polymarket field');
     expect(f.value).toContain('https://polymarket.com/event/');
     expect(f.value).toContain('Nice Title');
     expect(f.value).toContain('↑');
+  });
+
+  it('buildClusterDiscordEmbed omits Polymarket field when cluster has no market slug', async () => {
+    const embed = await buildClusterDiscordEmbed({
+      db: mockDbForEmbed(),
+      row: cluster({ id: 99, polymarket_slug: null }),
+      description: 'Body',
+      footerTag: 'M3',
+    });
+    expect(embed.fields.map((x) => x.name)).toEqual(['Topic', 'Sources']);
   });
 
   it('marketDrivenDescription uses JSON summary when valid', () => {

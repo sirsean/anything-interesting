@@ -54,9 +54,9 @@ export async function loadMarketTitle(db: D1Database, slug: string): Promise<str
 export function polymarketField(
   c: ClusterRowForEmbed,
   marketTitle: string | null,
-): { name: string; value: string; inline: boolean } {
+): { name: string; value: string; inline: boolean } | null {
   if (!c.polymarket_slug) {
-    return { name: 'Polymarket', value: '—', inline: false };
+    return null;
   }
   const url = `https://polymarket.com/event/${encodeURIComponent(c.polymarket_slug)}`;
   const title = (marketTitle ?? c.polymarket_slug).slice(0, 200);
@@ -98,10 +98,14 @@ export type ClusterEmbedBuildInput = {
   description: string;
   /** Short tail for footer, e.g. `M3` (digest) or `on-demand` (slash). */
   footerTag: string;
+  /**
+   * When set, used as the embed `url` (title hyperlink). Otherwise the top article URL or Polymarket event.
+   */
+  titleLinkUrl?: string;
 };
 
 export async function buildClusterDiscordEmbed(input: ClusterEmbedBuildInput): Promise<DiscordEmbed> {
-  const { db, row: c, description, footerTag } = input;
+  const { db, row: c, description, footerTag, titleLinkUrl } = input;
   const isMarketDriven = c.flow_type === 'market_driven';
   const sources = await sourcesLine(db, c.id);
   const top = await db
@@ -113,27 +117,42 @@ export async function buildClusterDiscordEmbed(input: ClusterEmbedBuildInput): P
 
   const baseTitle = (top?.title ?? c.representative_title).slice(0, 240);
   const title = (isMarketDriven ? `📈 ${baseTitle}` : baseTitle).slice(0, 256);
-  const url = top?.url
-    ?? (c.polymarket_slug
-      ? `https://polymarket.com/event/${encodeURIComponent(c.polymarket_slug)}`
-      : 'https://polymarket.com');
+
+  const trimmedTitleLink = titleLinkUrl?.trim();
+  let url: string;
+  if (trimmedTitleLink) {
+    url = trimmedTitleLink;
+  } else {
+    const articleUrl = top?.url;
+    if (articleUrl != null) {
+      url = articleUrl;
+    } else if (c.polymarket_slug) {
+      url = `https://polymarket.com/event/${encodeURIComponent(c.polymarket_slug)}`;
+    } else {
+      url = 'https://polymarket.com';
+    }
+  }
+
   const marketTitle = c.polymarket_slug ? await loadMarketTitle(db, c.polymarket_slug) : null;
+  const polymarket = polymarketField(c, marketTitle);
   const flavor = isMarketDriven ? 'market-driven' : 'news-driven';
+
+  const fields = [
+    { name: 'Topic', value: topicLabel(c.topic), inline: true },
+    {
+      name: 'Sources',
+      value: (sources || (isMarketDriven ? '(no matched articles)' : '—')).slice(0, 1000),
+      inline: true,
+    },
+    ...(polymarket ? [polymarket] : []),
+  ];
 
   return {
     title,
     url,
     description: description.slice(0, 4090),
     color: isMarketDriven ? 3447003 : 15844367,
-    fields: [
-      { name: 'Topic', value: topicLabel(c.topic), inline: true },
-      {
-        name: 'Sources',
-        value: (sources || (isMarketDriven ? '(no matched articles)' : '—')).slice(0, 1000),
-        inline: true,
-      },
-      polymarketField(c, marketTitle),
-    ],
+    fields,
     footer: {
       text: `Score: ${c.final_score.toFixed(2)} · ${flavor} · ${footerTag}`,
     },

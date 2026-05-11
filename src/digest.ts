@@ -96,6 +96,13 @@ export function formatDigestLabel(hourCT: string): string {
   return `${padded}:00 CT`;
 }
 
+/** Absolute cluster detail URL for the public SPA; undefined when `PUBLIC_SITE_URL` is unset. */
+export function digestClusterTitleLink(env: Env, clusterId: number): string | undefined {
+  const base = env.PUBLIC_SITE_URL?.trim();
+  if (!base) return undefined;
+  return `${base.replace(/\/+$/, '')}/cluster/${clusterId}`;
+}
+
 export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
   const webhook = env.DISCORD_WEBHOOK_URL;
   if (!webhook) {
@@ -159,6 +166,7 @@ export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
       row: c,
       description: desc,
       footerTag: 'M3',
+      titleLinkUrl: digestClusterTitleLink(env, c.id),
     });
     const hint = '👍/👎 on this message tunes outlet weights (M5).';
     embed.footer.text = `${embed.footer.text} · ${hint}`.slice(0, 2048);

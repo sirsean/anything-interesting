@@ -45,3 +45,5 @@ remote = true
 AI_GATEWAY_ID = ""
 # Optional override for final cluster judgment model (Workers AI slug), e.g. when swapping via AI Gateway.
 JUDGMENT_MODEL = ""
+# Digest embed title links: `{PUBLIC_SITE_URL}/cluster/:id` (SPA on the same Worker).
+PUBLIC_SITE_URL = "https://anything-interesting.sirsean.workers.dev"

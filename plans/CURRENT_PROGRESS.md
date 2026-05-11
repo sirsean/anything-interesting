@@ -104,3 +104,5 @@ Feeds in `src/sources.ts` (`M1_FEEDS`): **The Guardian** World, **BBC** World, *
 ---
 
 _Last updated: 2026-05-11 — `M1_FEEDS` has twelve outlets including Politico section RSS on `rss.politico.com` (see RSS note). M6 and test suite unchanged otherwise (81/81 green). **Open:** `npm run deploy` from a workstation with credentials, then browse `/` + `/api/stats`; M4/M5 cron smoke (ingest/snapshot logs, digest post or quiet run, reaction polling) is unchanged from before._
+
+**2026-05-11 (digest → UI):** Scheduled Discord digest embed titles link to `PUBLIC_SITE_URL/cluster/:id` when `PUBLIC_SITE_URL` is set (`wrangler.toml` / dashboard); unset preserves the previous top-article (or Polymarket) title URL. `/topnews` unchanged.

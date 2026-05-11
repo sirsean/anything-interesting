@@ -17,4 +17,9 @@ export type Env = {
   JUDGMENT_MODEL?: string;
   /** Cloudflare AI Gateway id; empty = direct Workers AI (no gateway). */
   AI_GATEWAY_ID?: string;
+  /**
+   * Public origin of the M6 SPA (no trailing slash), e.g. `https://anything-interesting.example.workers.dev`.
+   * When set, scheduled digest embed titles link to `/cluster/:id` here instead of the top article URL.
+   */
+  PUBLIC_SITE_URL?: string;
 };

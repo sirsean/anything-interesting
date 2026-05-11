@@ -1,3 +1,4 @@
+import { handleApiRequest } from './api';
 import { deliverDigest } from './digest';
 import { runIngest } from './ingest';
 import type { Env } from './env';
@@ -15,6 +16,14 @@ export default {
     }
     if (req.method === 'POST' && url.pathname === '/interactions') {
       return handleDiscordInteraction(req, env, ctx);
+    }
+    if (url.pathname.startsWith('/api/')) {
+      const apiRes = await handleApiRequest(req, env);
+      if (apiRes) return apiRes;
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+        status: 405,
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+      });
     }
     return new Response('Not found', { status: 404 });
   },

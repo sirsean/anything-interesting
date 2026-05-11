@@ -1,0 +1,37 @@
+:root {
+  color-scheme: light;
+
+  /* ---- palette: midcentury newsprint --------------------------------- */
+  --paper: #f4ede0;
+  --paper-shade: #ebe2d0;
+  --paper-warm: #fbf6ea;
+  --ink: #15140f;
+  --ink-soft: #2c2a22;
+  --ink-mute: #5a5648;
+  --hairline: rgba(21, 20, 15, 0.85);
+  --hairline-soft: rgba(21, 20, 15, 0.18);
+
+  /* accents */
+  --rust: #b8431b;
+  --mustard: #c79a17;
+  --teal: #2e6363;
+  --sky: #4a6e8a;
+  --bone: #efe6d2;
+
+  /* score bands */
+  --band-low: rgba(21, 20, 15, 0.18);
+  --band-mid: var(--mustard);
+  --band-high: var(--rust);
+
+  /* type */
+  --display: 'Playfair Display', 'Times New Roman', Times, serif;
+  --serif: 'Source Serif 4', 'Source Serif Pro', Georgia, 'Times New Roman', serif;
+  --sans: 'Inter Tight', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* metrics */
+  --rule: 1px;
+  --rule-double: 4px;
+  --gutter: 1.75rem;
+  --col-max: 78rem;
+}

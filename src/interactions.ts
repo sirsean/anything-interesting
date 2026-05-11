@@ -1,15 +1,11 @@
-import { formatChicagoDigestSlotFromIso, nextScheduledDigestLabel } from './chicago_digest';
 import {
   buildClusterDiscordEmbed,
   marketDrivenDescription,
   type ClusterRowForEmbed,
 } from './discord_cluster_embed';
 import type { DiscordEmbed } from './discord';
-import {
-  DIGEST_SOURCE_WINDOW_HOURS,
-  MIN_FINAL_SCORE,
-  MIN_WEIGHTED_SOURCE_COVERAGE,
-} from './digest_constants';
+import { DIGEST_SOURCE_WINDOW_HOURS } from './digest_constants';
+import { digestStatusLabel, type DigestStatusRow } from './digest_status';
 import type { Env } from './env';
 import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
 
@@ -27,13 +23,10 @@ type DiscordInteraction = {
   };
 };
 
-type TopNewsRow = ClusterRowForEmbed & {
-  posted_digest_id: number | null;
-  posted_digest_at: string | null;
-  weighted_sources_12h: number;
-  grace_ok: number;
-  last_updated: string;
-};
+type TopNewsRow = ClusterRowForEmbed &
+  DigestStatusRow & {
+    last_updated: string;
+  };
 
 function hexToBytes(hex: string): Uint8Array {
   const clean = hex.trim().replace(/^0x/i, '');
@@ -81,29 +74,6 @@ export function parseTopNewsOptions(data: DiscordInteraction['data']): {
     }
   }
   return { count, topic };
-}
-
-function digestEligible(r: TopNewsRow): boolean {
-  if (r.posted_digest_id != null) return false;
-  if (r.final_score < MIN_FINAL_SCORE) return false;
-  if (!r.grace_ok) return false;
-  if (r.flow_type === 'market_driven') return true;
-  const w = Number(r.weighted_sources_12h);
-  return Number.isFinite(w) && w >= MIN_WEIGHTED_SOURCE_COVERAGE;
-}
-
-function statusLine(r: TopNewsRow): string {
-  if (r.posted_digest_id != null) {
-    if (r.posted_digest_at) {
-      const slot = formatChicagoDigestSlotFromIso(r.posted_digest_at);
-      return `Posted in ${slot} digest`;
-    }
-    return 'Posted in a recent digest';
-  }
-  if (digestEligible(r)) {
-    return `In upcoming ${nextScheduledDigestLabel()} digest`;
-  }
-  return 'Below digest threshold';
 }
 
 async function descriptionForTopNews(c: ClusterRowForEmbed): Promise<string> {
@@ -182,7 +152,7 @@ async function buildTopNewsEmbeds(env: Env, rows: TopNewsRow[]): Promise<Discord
     });
     embed.fields.unshift({
       name: 'Digest status',
-      value: statusLine(r).slice(0, 1024),
+      value: digestStatusLabel(r).slice(0, 1024),
       inline: false,
     });
     out.push(embed);

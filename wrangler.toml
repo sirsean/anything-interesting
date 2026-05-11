@@ -2,6 +2,16 @@ name = "anything-interesting"
 main = "src/index.ts"
 compatibility_date = "2026-05-01"
 
+# M6: serve the Vite-built SPA from the same Worker. The plugin emits SPA assets
+# to dist/client/ and a Worker bundle (with an output wrangler.json) to
+# dist/anything-interesting/; `wrangler deploy` consumes that output config.
+# `not_found_handling = single-page-application` falls back to index.html for
+# client-side routes; `run_worker_first` keeps `/api/*` (and `/health`,
+# `/interactions`) flowing through the Worker without an asset lookup.
+[assets]
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/health", "/interactions"]
+
 [triggers]
 crons = ["0 * * * *"]
 

@@ -336,9 +336,10 @@ Checklists, acceptance criteria, and sequencing live only in the milestone files
 ## Non-goals
 
 - Multi-user / multi-channel support
-- Web UI
 - Trading on Polymarket
 - Comprehensive news coverage — curated signal feed, not a reader
+
+(M6 introduced a read-only public newspaper-style web UI over the analyzed cluster pool; it does not change the precision-first ingest/digest mission above.)
 
 ## Notes for the Coding Agent
 

@@ -85,7 +85,7 @@
 
 ### RSS note
 
-Starter feeds are Reuters (`feeds.reuters.com/reuters/topNews`), BBC World, and AP (`apnews.com/index.rss`). AP may return **401** to some automated clients; if ingest logs show repeated AP failures, swap that feed URL in `src/sources.ts` for another outlet from `INITIAL.md` (same code path).
+Starter feeds in `src/sources.ts` are **The Guardian** World (`theguardian.com/world/rss`), **BBC** World, and **NPR** Topics: News (`feeds.npr.org/1001/rss.xml`). Reuters and AP canonical RSS URLs were dropped (401/530 from Workers); swap in other `INITIAL.md` feeds if any of these degrade.
 
 ---
 

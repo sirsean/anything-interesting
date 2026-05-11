@@ -6,15 +6,15 @@ export type FeedSource = {
 };
 
 /**
- * M1 starter feeds from INITIAL.md.
- * AP’s canonical RSS often returns 401 to automated clients; if ingest logs show AP failures,
- * swap the URL for another INITIAL feed (e.g. Politico) without changing ingest logic.
+ * M1 starter feeds (see INITIAL.md for more alternates).
+ * Reuters (`feeds.reuters.com`, `reuters.com/rssFeed/*`) and AP (`apnews.com/index.rss`) commonly
+ * return 401/530 to Workers-class clients; use outlets that allow open RSS fetches instead.
  */
 export const M1_FEEDS: FeedSource[] = [
   {
-    id: 'reuters',
-    label: 'Reuters',
-    url: 'https://feeds.reuters.com/reuters/topNews',
+    id: 'guardian',
+    label: 'The Guardian',
+    url: 'https://www.theguardian.com/world/rss',
   },
   {
     id: 'bbc',
@@ -22,8 +22,8 @@ export const M1_FEEDS: FeedSource[] = [
     url: 'https://feeds.bbci.co.uk/news/world/rss.xml',
   },
   {
-    id: 'ap',
-    label: 'AP',
-    url: 'https://apnews.com/index.rss',
+    id: 'npr',
+    label: 'NPR',
+    url: 'https://feeds.npr.org/1001/rss.xml',
   },
 ];

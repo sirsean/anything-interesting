@@ -123,13 +123,14 @@ The **bot token is not stored in the Worker** for slash-command registration —
 
 | Var | Purpose |
 | --- | ------- |
+| `DISCORD_APPLICATION_ID` | Discord app ID (public; same as Developer Portal → General Information) |
 | `PUBLIC_SITE_URL` | Origin for digest embed links to `/cluster/:id` |
 | `AI_GATEWAY_ID` | Route Workers AI through AI Gateway (optional) |
 | `JUDGMENT_MODEL` | Override final judgment model slug (optional) |
 
 ### Local `.env` (gitignored)
 
-Copy `.env.example` → `.env` for operator scripts only:
+Copy `.env.example` → `.env` for operator scripts only (`DISCORD_APPLICATION_ID` should match `wrangler.toml`):
 
 ```bash
 DISCORD_APPLICATION_ID=...

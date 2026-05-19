@@ -146,6 +146,7 @@ async function persistWatchlist(env: Env, kept: WatchMarket[]): Promise<void> {
 
   if (kept.length === 0) {
     await env.CONFIG.put(WATCHLIST_CURSOR_KEY, nowIso);
+    console.log(`persistWatchlist empty kept=0 cursor=${nowIso}`);
     return;
   }
 
@@ -259,7 +260,7 @@ export async function refreshWatchlistIfDue(env: Env, opts?: { force?: boolean }
 
   await persistWatchlist(env, kept);
   console.log(
-    `watchlist refreshed kept=${kept.length} from raw=${raw.length} kimi=${kimiCalls}`,
+    `watchlist refreshed kept=${kept.length} from raw=${raw.length} norm=${norm.length} kimi=${kimiCalls}`,
   );
   return kept.map((m) => m.slug);
 }

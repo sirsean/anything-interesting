@@ -9,16 +9,21 @@ import { runMarketSnapshotsAndStrategyB } from './snapshots';
 import { refreshWatchlistIfDue } from './watchlist';
 
 /** Same work as the hourly cron (`scheduled`). Used by `GET /__scheduled` on loopback in wrangler dev. */
-export async function runScheduledTick(env: Env): Promise<void> {
+export async function runScheduledTick(
+  env: Env,
+  opts?: { forceWatchlist?: boolean },
+): Promise<void> {
   const hourCT = getChicagoHour();
   console.log(`scheduled tick Chicago hour=${hourCT}`);
 
   // Watchlist runs once per ~24h regardless of which hour wins; cheap no-op
   // when fresh (just a KV read).
   try {
-    const slugs = await refreshWatchlistIfDue(env);
+    const slugs = await refreshWatchlistIfDue(env, { force: opts?.forceWatchlist === true });
     if (slugs.length > 0) {
       console.log(`watchlist refresh persisted=${slugs.length}`);
+    } else if (opts?.forceWatchlist) {
+      console.log('watchlist refresh forced but persisted=0');
     }
   } catch (e) {
     console.error('watchlist refresh error', e);
@@ -84,6 +89,34 @@ export default {
     }
     if (req.method === 'GET' && url.pathname === '/health') {
       return Response.json({ ok: true, service: 'anything-interesting' });
+    }
+    if (req.method === 'POST' && url.pathname === '/ops/refresh-watchlist') {
+      const t = req.headers.get('X-Ops-Token');
+      if (!env.OPS_TOKEN || t !== env.OPS_TOKEN) {
+        return new Response('forbidden', { status: 403 });
+      }
+      // Must await: waitUntil is cut off before Gamma/Kimi/embed work finishes.
+      try {
+        const slugs = await refreshWatchlistIfDue(env, { force: true });
+        const watchlistCursor = await env.CONFIG.get('cursors:watchlist_refreshed_at');
+        console.log(`ops watchlist refresh persisted=${slugs.length} cursor=${watchlistCursor}`);
+        const m = await runMarketSnapshotsAndStrategyB(env);
+        console.log(
+          `ops snapshots done snapshotted=${m.snapshotted} flagged=${m.flagged} market_driven=${m.marketDriven}`,
+        );
+        return Response.json({
+          ok: true,
+          watchlist_slugs: slugs.length,
+          watchlist_cursor: watchlistCursor,
+          snapshots: m,
+        });
+      } catch (e) {
+        console.error('ops refresh-watchlist failed', e);
+        return Response.json(
+          { ok: false, error: e instanceof Error ? e.message : String(e) },
+          { status: 500 },
+        );
+      }
     }
     if (req.method === 'POST' && url.pathname === '/interactions') {
       return handleDiscordInteraction(req, env, ctx);

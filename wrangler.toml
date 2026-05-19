@@ -10,7 +10,7 @@ compatibility_date = "2026-05-01"
 # `/interactions`) flowing through the Worker without an asset lookup.
 [assets]
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/health", "/interactions", "/__scheduled"]
+run_worker_first = ["/api/*", "/health", "/interactions", "/__scheduled", "/ops/*"]
 
 [triggers]
 crons = ["0 * * * *"]
@@ -41,6 +41,8 @@ binding = "AI"
 remote = true
 
 [vars]
+# Discord Developer Portal → General Information → Application ID (public; not a secret).
+DISCORD_APPLICATION_ID = "1503164085410332853"
 # Set in dashboard / `wrangler vars put AI_GATEWAY_ID` to route Workers AI through AI Gateway.
 AI_GATEWAY_ID = ""
 # Optional override for final cluster judgment model (Workers AI slug), e.g. when swapping via AI Gateway.

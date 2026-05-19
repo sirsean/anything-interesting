@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { handleApiRequest, parseLlmReasoning } from '../src/api';
 import type { Env } from '../src/env';
+import { kimiJudgmentDayKey } from '../src/kimi_budget';
 
 type StatsRow = {
   articles_last_24h: number;
@@ -14,6 +15,7 @@ function makeEnv(opts: {
   clusterRow?: Record<string, unknown> | null;
   lastDigest?: string | null;
   kimiJudgmentUsed?: number;
+  kimiJudgmentByDay?: Record<string, number>;
 } = {}): Env {
   const statsRow = opts.statsRow ?? {
     articles_last_24h: 7,
@@ -35,13 +37,33 @@ function makeEnv(opts: {
     }),
   } as unknown as D1Database;
 
+  const kimiByDay: Record<string, number> =
+    opts.kimiJudgmentByDay ??
+    (opts.kimiJudgmentUsed != null
+      ? { [kimiJudgmentDayKey()]: opts.kimiJudgmentUsed }
+      : {});
+
   const fakeKv = {
     get: async (key: string) => {
       if (key.startsWith('llm:kimi_count:')) {
-        return opts.kimiJudgmentUsed != null ? String(opts.kimiJudgmentUsed) : null;
+        const day = key.slice('llm:kimi_count:'.length);
+        const n = kimiByDay[day];
+        return n != null ? String(n) : null;
       }
       if (key === 'cursors:last_digest_at') return opts.lastDigest ?? null;
       return null;
+    },
+    list: async ({ prefix }: { prefix?: string }) => {
+      if (prefix !== 'llm:kimi_count:') return { keys: [], list_complete: true, cursor: '' };
+      return {
+        keys: Object.keys(kimiByDay).map((day) => ({
+          name: `llm:kimi_count:${day}`,
+          expiration: null,
+          metadata: null,
+        })),
+        list_complete: true,
+        cursor: '',
+      };
     },
   } as unknown as KVNamespace;
 
@@ -143,6 +165,39 @@ describe('handleApiRequest routing', () => {
     expect(body.kimi.judgment.used).toBe(11);
     expect(body.kimi.judgment.cap).toBe(22);
     expect(body.kimi.judgment.remaining).toBe(11);
+  });
+
+  it('GET /api/stats/kimi?day= returns a single day', async () => {
+    const res = await handleApiRequest(
+      new Request('https://example.test/api/stats/kimi?day=2026-05-17'),
+      makeEnv({ kimiJudgmentByDay: { '2026-05-17': 3 } }),
+    );
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as { kimi: { judgment: Record<string, number> } };
+    expect(body.kimi.judgment.day).toBe('2026-05-17');
+    expect(body.kimi.judgment.used).toBe(3);
+    expect(body.kimi.judgment.remaining).toBe(19);
+  });
+
+  it('GET /api/stats/kimi rejects invalid day', async () => {
+    const res = await handleApiRequest(
+      new Request('https://example.test/api/stats/kimi?day=not-a-day'),
+      makeEnv(),
+    );
+    expect(res!.status).toBe(400);
+  });
+
+  it('GET /api/stats/kimi lists KV history newest-first', async () => {
+    const res = await handleApiRequest(
+      new Request('https://example.test/api/stats/kimi'),
+      makeEnv({ kimiJudgmentByDay: { '2026-05-17': 3, '2026-05-18': 11 } }),
+    );
+    const body = (await res!.json()) as {
+      kimi: { judgment: { cap: number; items: Array<{ day: string; used: number }> } };
+    };
+    expect(body.kimi.judgment.cap).toBe(22);
+    expect(body.kimi.judgment.items.map((i) => i.day)).toEqual(['2026-05-18', '2026-05-17']);
+    expect(body.kimi.judgment.items[0].used).toBe(11);
   });
 
   it('returns empty topnews list when D1 has no clusters', async () => {

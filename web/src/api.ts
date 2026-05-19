@@ -93,6 +93,28 @@ export type DigestsResponse = {
   items: DigestArchiveItem[];
 };
 
+export type KimiJudgmentSnapshot = {
+  day: string;
+  used: number;
+  cap: number;
+  remaining: number;
+};
+
+export type KimiJudgmentDayResponse = {
+  kimi: { judgment: KimiJudgmentSnapshot };
+  generated_at: string;
+};
+
+export type KimiJudgmentHistoryResponse = {
+  kimi: {
+    judgment: {
+      cap: number;
+      items: Array<Pick<KimiJudgmentSnapshot, 'day' | 'used' | 'remaining'>>;
+    };
+  };
+  generated_at: string;
+};
+
 export type StatsResponse = {
   articles_last_24h: number;
   distinct_sources_last_24h: number;
@@ -141,6 +163,22 @@ export function fetchCluster(id: number, signal?: AbortSignal): Promise<ClusterD
 
 export function fetchStats(signal?: AbortSignal): Promise<StatsResponse> {
   return fetchJson<StatsResponse>('/api/stats', signal);
+}
+
+export function fetchKimiJudgmentDay(
+  day: string,
+  signal?: AbortSignal,
+): Promise<KimiJudgmentDayResponse> {
+  return fetchJson<KimiJudgmentDayResponse>(
+    `/api/stats/kimi?day=${encodeURIComponent(day)}`,
+    signal,
+  );
+}
+
+export function fetchKimiJudgmentHistory(
+  signal?: AbortSignal,
+): Promise<KimiJudgmentHistoryResponse> {
+  return fetchJson<KimiJudgmentHistoryResponse>('/api/stats/kimi', signal);
 }
 
 export function fetchDigests(limit: number, signal?: AbortSignal): Promise<DigestsResponse> {

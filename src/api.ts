@@ -1,7 +1,13 @@
 import { DIGEST_SOURCE_WINDOW_HOURS, MIN_FINAL_SCORE } from './digest_constants';
 import { digestStatusLabel, isDigestEligible } from './digest_status';
 import type { Env } from './env';
-import { getKimiJudgmentUsage } from './kimi_budget';
+import {
+  KIMI_JUDGMENT_DAILY_CAP,
+  getKimiJudgmentUsage,
+  getKimiJudgmentUsageForDay,
+  isKimiJudgmentDay,
+  listKimiJudgmentUsage,
+} from './kimi_budget';
 import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
 
 const ALLOWED_TOPICS = new Set(['geopolitics', 'politics', 'economics', 'technology']);
@@ -499,6 +505,31 @@ async function handleStats(env: Env, now: Date): Promise<Response> {
   });
 }
 
+async function handleKimiStats(env: Env, url: URL, now: Date): Promise<Response> {
+  const dayParam = url.searchParams.get('day');
+  if (dayParam !== null) {
+    if (!isKimiJudgmentDay(dayParam)) {
+      return errorResponse(400, 'Invalid day; use YYYY-MM-DD (UTC)');
+    }
+    const judgment = await getKimiJudgmentUsageForDay(env, dayParam);
+    return jsonResponse({
+      kimi: { judgment },
+      generated_at: now.toISOString(),
+    });
+  }
+
+  const items = await listKimiJudgmentUsage(env);
+  return jsonResponse({
+    kimi: {
+      judgment: {
+        cap: KIMI_JUDGMENT_DAILY_CAP,
+        items: items.map(({ day, used, remaining }) => ({ day, used, remaining })),
+      },
+    },
+    generated_at: now.toISOString(),
+  });
+}
+
 /**
  * Routes any `GET /api/...` request. Returns `null` if the path doesn't match,
  * so the caller can fall through to the SPA static-asset binding.
@@ -519,6 +550,9 @@ export async function handleApiRequest(req: Request, env: Env): Promise<Response
     }
     if (pathname === '/api/digests') {
       return await handleDigests(env, url);
+    }
+    if (pathname === '/api/stats/kimi') {
+      return await handleKimiStats(env, url, now);
     }
     if (pathname === '/api/stats') {
       return await handleStats(env, now);

@@ -13,6 +13,7 @@ function makeEnv(opts: {
   statsRow?: StatsRow | null;
   clusterRow?: Record<string, unknown> | null;
   lastDigest?: string | null;
+  kimiJudgmentUsed?: number;
 } = {}): Env {
   const statsRow = opts.statsRow ?? {
     articles_last_24h: 7,
@@ -35,7 +36,13 @@ function makeEnv(opts: {
   } as unknown as D1Database;
 
   const fakeKv = {
-    get: async () => opts.lastDigest ?? null,
+    get: async (key: string) => {
+      if (key.startsWith('llm:kimi_count:')) {
+        return opts.kimiJudgmentUsed != null ? String(opts.kimiJudgmentUsed) : null;
+      }
+      if (key === 'cursors:last_digest_at') return opts.lastDigest ?? null;
+      return null;
+    },
   } as unknown as KVNamespace;
 
   return {
@@ -120,6 +127,22 @@ describe('handleApiRequest routing', () => {
     expect(body.polymarket_matched_count).toBe(1);
     expect(body.last_digest_at).toBe('2026-05-09T20:00:00Z');
     expect(typeof body.generated_at).toBe('string');
+    const kimi = body.kimi as { judgment: Record<string, unknown> };
+    expect(kimi.judgment.used).toBe(0);
+    expect(kimi.judgment.cap).toBe(22);
+    expect(kimi.judgment.remaining).toBe(22);
+    expect(typeof kimi.judgment.day).toBe('string');
+  });
+
+  it('returns kimi judgment usage from CONFIG KV', async () => {
+    const res = await handleApiRequest(
+      new Request('https://example.test/api/stats'),
+      makeEnv({ kimiJudgmentUsed: 11 }),
+    );
+    const body = (await res!.json()) as { kimi: { judgment: Record<string, number> } };
+    expect(body.kimi.judgment.used).toBe(11);
+    expect(body.kimi.judgment.cap).toBe(22);
+    expect(body.kimi.judgment.remaining).toBe(11);
   });
 
   it('returns empty topnews list when D1 has no clusters', async () => {

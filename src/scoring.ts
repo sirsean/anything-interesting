@@ -1,32 +1,10 @@
 import type { Env } from './env';
 import { MIN_WEIGHTED_SOURCE_COVERAGE } from './digest_constants';
+import { getKimiJudgmentUsage, recordKimiJudgmentCall } from './kimi_budget';
 import { MODEL_KIMI_JUDGE, runLLM, textFromChatOut } from './llm';
 import { matchClusterToMarkets } from './match_markets';
 import { weightedDistinctSourceSum } from './source_weights';
 import { inferTopicFromTitle, topicalWeight } from './topic';
-
-/** ~3 digests × few judgments + buffer; aligns with INITIAL ~10–20/day target. */
-const KIMI_DAILY_CAP = 22;
-
-function utcDayKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-async function kimiBudgetRemaining(env: Env): Promise<number> {
-  const day = utcDayKey();
-  const key = `llm:kimi_count:${day}`;
-  const raw = await env.CONFIG.get(key);
-  const n = raw ? parseInt(raw, 10) : 0;
-  return Math.max(0, KIMI_DAILY_CAP - (Number.isFinite(n) ? n : 0));
-}
-
-async function recordKimiCall(env: Env): Promise<void> {
-  const day = utcDayKey();
-  const key = `llm:kimi_count:${day}`;
-  const raw = await env.CONFIG.get(key);
-  const n = (raw ? parseInt(raw, 10) : 0) || 0;
-  await env.CONFIG.put(key, String(n + 1), { expirationTtl: 86400 * 2 });
-}
 
 export function noveltyFromFirstSeen(firstSeen: string): number {
   const t = Date.parse(firstSeen);
@@ -78,8 +56,8 @@ async function maybeRunJudgment(
     return { llm: row.llm_score, log: null, judgedDistinct: row.judged_distinct_sources };
   }
 
-  const budget = await kimiBudgetRemaining(env);
-  if (budget <= 0) {
+  const { remaining } = await getKimiJudgmentUsage(env);
+  if (remaining <= 0) {
     console.warn('Kimi judgment skipped: daily budget exhausted');
     return { llm: row.llm_score, log: null, judgedDistinct: row.judged_distinct_sources };
   }
@@ -114,7 +92,7 @@ async function maybeRunJudgment(
     return { llm: row.llm_score, log: null, judgedDistinct: row.judged_distinct_sources };
   }
 
-  await recordKimiCall(env);
+  await recordKimiJudgmentCall(env);
   const { score, reason } = parseJudgment(raw);
   const log = JSON.stringify({ score, reason, at: new Date().toISOString() }).slice(0, 4000);
   return { llm: score, log, judgedDistinct: distinct };

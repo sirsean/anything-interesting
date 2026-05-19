@@ -1,6 +1,7 @@
 import { DIGEST_SOURCE_WINDOW_HOURS, MIN_FINAL_SCORE } from './digest_constants';
 import { digestStatusLabel, isDigestEligible } from './digest_status';
 import type { Env } from './env';
+import { getKimiJudgmentUsage } from './kimi_budget';
 import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
 
 const ALLOWED_TOPICS = new Set(['geopolitics', 'politics', 'economics', 'technology']);
@@ -474,7 +475,10 @@ async function handleStats(env: Env, now: Date): Promise<Response> {
       polymarket_matched_count: number;
     }>();
 
-  const lastDigest = await env.CONFIG.get('cursors:last_digest_at');
+  const [lastDigest, kimi] = await Promise.all([
+    env.CONFIG.get('cursors:last_digest_at'),
+    getKimiJudgmentUsage(env, now),
+  ]);
 
   return jsonResponse({
     articles_last_24h: stats?.articles_last_24h ?? 0,
@@ -483,6 +487,14 @@ async function handleStats(env: Env, now: Date): Promise<Response> {
     polymarket_matched_count: stats?.polymarket_matched_count ?? 0,
     last_digest_at: lastDigest,
     digest_threshold: MIN_FINAL_SCORE,
+    kimi: {
+      judgment: {
+        day: kimi.day,
+        used: kimi.used,
+        cap: kimi.cap,
+        remaining: kimi.remaining,
+      },
+    },
     generated_at: now.toISOString(),
   });
 }

@@ -100,6 +100,15 @@ export type StatsResponse = {
   polymarket_matched_count: number;
   last_digest_at: string | null;
   digest_threshold: number;
+  kimi: {
+    judgment: {
+      /** UTC day key for the judgment budget (`YYYY-MM-DD`). */
+      day: string;
+      used: number;
+      cap: number;
+      remaining: number;
+    };
+  };
   generated_at: string;
 };
 

@@ -165,10 +165,9 @@ export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
       db: env.DB,
       row: c,
       description: desc,
-      footerTag: 'M3',
       titleLinkUrl: digestClusterTitleLink(env, c.id),
     });
-    const hint = '👍/👎 on this message tunes outlet weights (M5).';
+    const hint = '👍/👎 on this message tunes outlet weights.';
     embed.footer.text = `${embed.footer.text} · ${hint}`.slice(0, 2048);
 
     const content =

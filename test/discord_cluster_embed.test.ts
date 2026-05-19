@@ -42,7 +42,6 @@ describe('discord_cluster_embed', () => {
       db: mockDbForEmbed(),
       row: cluster({ id: 99, polymarket_slug: null }),
       description: 'Body',
-      footerTag: 'M3',
       titleLinkUrl: 'https://ui.example/cluster/99',
     });
     expect(embed.url).toBe('https://ui.example/cluster/99');
@@ -53,7 +52,6 @@ describe('discord_cluster_embed', () => {
       db: mockDbForEmbed(),
       row: cluster({ id: 99, polymarket_slug: null }),
       description: 'Body',
-      footerTag: 'M3',
     });
     expect(embed.url).toBe('https://news.example/article');
   });
@@ -89,7 +87,6 @@ describe('discord_cluster_embed', () => {
       db: mockDbForEmbed(),
       row: cluster({ id: 99, polymarket_slug: null }),
       description: 'Body',
-      footerTag: 'M3',
     });
     expect(embed.fields.map((x) => x.name)).toEqual(['Topic', 'Sources']);
   });

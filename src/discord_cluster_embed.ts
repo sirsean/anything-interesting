@@ -96,8 +96,8 @@ export type ClusterEmbedBuildInput = {
   row: ClusterRowForEmbed;
   /** Embed description body (digest uses GLM; interactions use fallbacks). */
   description: string;
-  /** Short tail for footer, e.g. `M3` (digest) or `on-demand` (slash). */
-  footerTag: string;
+  /** Optional short tail for footer, e.g. `on-demand` for slash `/topnews`. */
+  footerTag?: string;
   /**
    * When set, used as the embed `url` (title hyperlink). Otherwise the top article URL or Polymarket event.
    */
@@ -154,7 +154,11 @@ export async function buildClusterDiscordEmbed(input: ClusterEmbedBuildInput): P
     color: isMarketDriven ? 3447003 : 15844367,
     fields,
     footer: {
-      text: `Score: ${c.final_score.toFixed(2)} · ${flavor} · ${footerTag}`,
+      text: [
+        `Score: ${c.final_score.toFixed(2)}`,
+        flavor,
+        ...(footerTag ? [footerTag] : []),
+      ].join(' · '),
     },
   };
 }

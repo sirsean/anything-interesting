@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeMarket, type GammaMarket } from '../src/polymarket';
+import {
+  biggestMoverToGamma,
+  normalizeMarket,
+  type BiggestMoverMarket,
+  type GammaMarket,
+} from '../src/polymarket';
 
 describe('polymarket normalizeMarket', () => {
   it('returns null when slug missing or market closed/archived', () => {
@@ -44,6 +49,27 @@ describe('polymarket normalizeMarket', () => {
       closed: false,
     } as GammaMarket);
     expect(w!.yesPrice).toBeCloseTo(0.34);
+  });
+
+  it('biggestMoverToGamma maps breaking API rows for normalizeMarket', () => {
+    const row: BiggestMoverMarket = {
+      id: '1992868',
+      slug: 'will-jerome-powell-depart-as-fed-chair-between-may-15-and-may-22',
+      question: 'Will Jerome Powell depart as Fed Chair between May 15 and May 22?',
+      outcomePrices: ['0.947', '0.053'],
+      clobTokenIds: ['yes-token', 'no-token'],
+      oneDayPriceChange: 0.4485,
+      currentPrice: 0.947,
+      closed: false,
+      events: [{ volume: 240209.94 }],
+    };
+    const g = biggestMoverToGamma(row, 'politics');
+    const w = normalizeMarket(g);
+    expect(w).not.toBeNull();
+    expect(w!.yesPrice).toBeCloseTo(0.947);
+    expect(w!.yesTokenId).toBe('yes-token');
+    expect(w!.tagLabels).toContain('politics');
+    expect(w!.category).toBe('politics');
   });
 
   it('normalizes tag labels to trimmed lowercase strings', () => {

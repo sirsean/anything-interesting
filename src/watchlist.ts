@@ -8,6 +8,7 @@ import type { Env } from './env';
 import { runEmbed, runLLM, MODEL_KIMI_JUDGE, textFromChatOut } from './llm';
 import {
   fetchActiveMarketsByVolume,
+  fetchBreakingMarkets,
   normalizeMarket,
   type WatchMarket,
 } from './polymarket';
@@ -61,6 +62,7 @@ const KEEP_TAGS = [
   'election',
   'politics',
   'geopolitics',
+  'world',
   'foreign policy',
   'economics',
   'economy',
@@ -81,6 +83,10 @@ const KEEP_TAGS = [
 type Verdict = 'keep' | 'drop' | 'ambiguous';
 
 function classifyByTags(m: WatchMarket): Verdict {
+  const slug = m.slug.toLowerCase();
+  for (const blk of BLOCK_TAGS) {
+    if (slug.includes(blk)) return 'drop';
+  }
   const haystacks = [m.category.toLowerCase(), ...m.tagLabels];
   for (const t of haystacks) {
     if (!t) continue;
@@ -218,49 +224,72 @@ export async function refreshWatchlistIfDue(env: Env, opts?: { force?: boolean }
     return [];
   }
 
-  let raw;
+  let breakingRaw: Awaited<ReturnType<typeof fetchBreakingMarkets>> = [];
   try {
-    raw = await fetchActiveMarketsByVolume(FETCH_OVERSAMPLE);
+    breakingRaw = await fetchBreakingMarkets();
   } catch (e) {
-    console.error('Gamma fetch failed', e);
-    return [];
-  }
-
-  const norm: WatchMarket[] = [];
-  for (const r of raw) {
-    const n = normalizeMarket(r);
-    if (n) norm.push(n);
+    console.error('breaking biggest-movers fetch failed', e);
   }
 
   const kept: WatchMarket[] = [];
+  const seenSlugs = new Set<string>();
+  let breakingNorm = 0;
+
+  for (const r of breakingRaw) {
+    const n = normalizeMarket(r);
+    if (!n || seenSlugs.has(n.slug)) continue;
+    breakingNorm += 1;
+    if (classifyByTags(n) === 'drop') continue;
+    seenSlugs.add(n.slug);
+    kept.push(n);
+  }
+
+  let volumeRaw = 0;
+  let volumeNorm = 0;
   let kimiCalls = 0;
   const KIMI_CAP = 30;
 
-  for (const m of norm) {
-    if (kept.length >= WATCHLIST_TARGET) break;
-    const verdict = classifyByTags(m);
-    if (verdict === 'drop') continue;
-    if (verdict === 'keep') {
-      kept.push(m);
-      continue;
-    }
-    if (kimiCalls >= KIMI_CAP) {
-      continue;
-    }
-    kimiCalls += 1;
-    let keep = false;
+  if (kept.length < WATCHLIST_TARGET) {
+    let raw;
     try {
-      keep = await kimiDisambiguate(env, m);
+      raw = await fetchActiveMarketsByVolume(FETCH_OVERSAMPLE);
+      volumeRaw = raw.length;
     } catch (e) {
-      console.error('Kimi watchlist disambiguation failed', m.slug, e);
-      continue;
+      console.error('Gamma volume fetch failed', e);
+      raw = [];
     }
-    if (keep) kept.push(m);
+
+    for (const r of raw) {
+      if (kept.length >= WATCHLIST_TARGET) break;
+      const n = normalizeMarket(r);
+      if (!n || seenSlugs.has(n.slug)) continue;
+      volumeNorm += 1;
+      const verdict = classifyByTags(n);
+      if (verdict === 'drop') continue;
+      if (verdict === 'keep') {
+        seenSlugs.add(n.slug);
+        kept.push(n);
+        continue;
+      }
+      if (kimiCalls >= KIMI_CAP) continue;
+      kimiCalls += 1;
+      let keep = false;
+      try {
+        keep = await kimiDisambiguate(env, n);
+      } catch (e) {
+        console.error('Kimi watchlist disambiguation failed', n.slug, e);
+        continue;
+      }
+      if (keep) {
+        seenSlugs.add(n.slug);
+        kept.push(n);
+      }
+    }
   }
 
   await persistWatchlist(env, kept);
   console.log(
-    `watchlist refreshed kept=${kept.length} from raw=${raw.length} norm=${norm.length} kimi=${kimiCalls}`,
+    `watchlist refreshed kept=${kept.length} breaking=${breakingNorm} volume_raw=${volumeRaw} volume_norm=${volumeNorm} kimi=${kimiCalls}`,
   );
   return kept.map((m) => m.slug);
 }

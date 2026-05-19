@@ -6,7 +6,25 @@
  */
 
 const GAMMA_BASE = 'https://gamma-api.polymarket.com';
+const POLYMARKET_SITE = 'https://polymarket.com';
 const CLOB_BASE = 'https://clob.polymarket.com';
+
+/** Categories on /breaking/{category} (same as `biggest-movers` query param). */
+export const BREAKING_CATEGORIES = ['politics', 'world'] as const;
+export type BreakingCategory = (typeof BREAKING_CATEGORIES)[number];
+
+/** Row shape from `GET /api/biggest-movers?category=…` (Polymarket web app). */
+export type BiggestMoverMarket = {
+  id: string;
+  slug: string;
+  question?: string | null;
+  outcomePrices?: string[] | null;
+  clobTokenIds?: string[] | null;
+  oneDayPriceChange?: number | null;
+  currentPrice?: number | null;
+  closed?: boolean | null;
+  events?: { volume?: number | null }[] | null;
+};
 
 const UA =
   'Mozilla/5.0 (compatible; anything-interesting/1.0; +https://developers.cloudflare.com/workers/)';
@@ -113,6 +131,69 @@ export function normalizeMarket(m: GammaMarket): WatchMarket | null {
       typeof m.volume24hr === 'number' && Number.isFinite(m.volume24hr) ? m.volume24hr : null,
     tagLabels,
   };
+}
+
+/** Map a breaking-page market into Gamma shape for `normalizeMarket`. */
+export function biggestMoverToGamma(m: BiggestMoverMarket, category: BreakingCategory): GammaMarket {
+  const vol = m.events?.[0]?.volume;
+  return {
+    id: m.id,
+    slug: m.slug,
+    question: m.question,
+    description: null,
+    category,
+    active: m.closed !== true,
+    closed: m.closed ?? false,
+    archived: false,
+    outcomes: '["Yes","No"]',
+    outcomePrices: m.outcomePrices?.length ? JSON.stringify(m.outcomePrices) : null,
+    clobTokenIds: m.clobTokenIds?.length ? JSON.stringify(m.clobTokenIds) : null,
+    lastTradePrice: m.currentPrice ?? null,
+    oneDayPriceChange: m.oneDayPriceChange ?? null,
+    volume24hr: typeof vol === 'number' && Number.isFinite(vol) ? vol : null,
+    tags: [{ label: category, slug: category }],
+  };
+}
+
+/**
+ * Markets featured on /breaking/{category} — 24h “biggest movers” curated by Polymarket.
+ * @see https://polymarket.com/breaking/politics (dehydrates queryKey `['biggest-movers', category]`)
+ */
+export async function fetchBiggestMoversByCategory(
+  category: BreakingCategory,
+): Promise<BiggestMoverMarket[]> {
+  const url = new URL(`${POLYMARKET_SITE}/api/biggest-movers`);
+  url.searchParams.set('category', category);
+  const res = await fetch(url.toString(), {
+    headers: { 'User-Agent': UA, Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    console.error(`biggest-movers category=${category} failed: ${res.status} ${res.statusText}`);
+    return [];
+  }
+  const body = (await res.json()) as { markets?: BiggestMoverMarket[] } | null;
+  if (!body || !Array.isArray(body.markets)) {
+    console.error(`biggest-movers category=${category} unexpected shape`, body);
+    return [];
+  }
+  return body.markets.filter((m) => m?.slug);
+}
+
+/** Merge breaking feeds (dedupe by slug). */
+export async function fetchBreakingMarkets(
+  categories: readonly BreakingCategory[] = BREAKING_CATEGORIES,
+): Promise<GammaMarket[]> {
+  const out: GammaMarket[] = [];
+  const seen = new Set<string>();
+  for (const category of categories) {
+    const rows = await fetchBiggestMoversByCategory(category);
+    for (const row of rows) {
+      if (seen.has(row.slug)) continue;
+      seen.add(row.slug);
+      out.push(biggestMoverToGamma(row, category));
+    }
+  }
+  return out;
 }
 
 /**

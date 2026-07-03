@@ -136,17 +136,16 @@ export async function refreshClusterScores(env: Env, clusterId: number): Promise
   const topic = inferTopicFromTitle(row.representative_title);
   const tw = topicalWeight(topic);
 
-  // Strategy A — only spend embeddings/LLM once a cluster crosses candidacy.
+  // Strategy A — match every cluster to Polymarket; vector similarity ≥ 0.70 is a
+  // candidacy shortcut even when outlet coverage is still building (see INITIAL.md).
   let market: Awaited<ReturnType<typeof matchClusterToMarkets>> = null;
-  if (weightedSum >= MIN_WEIGHTED_SOURCE_COVERAGE) {
-    try {
-      market = await matchClusterToMarkets(env, row.representative_title, '');
-    } catch (e) {
-      console.error('Strategy A match failed', clusterId, e);
-    }
+  try {
+    market = await matchClusterToMarkets(env, row.representative_title, '');
+  } catch (e) {
+    console.error('Strategy A match failed', clusterId, e);
   }
 
-  const polymarketStrong = market != null && market.surprise >= 0.4;
+  const polymarketStrong = market != null;
   const polymarketContext =
     market == null
       ? 'no Polymarket match.'

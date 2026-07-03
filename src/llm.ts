@@ -30,6 +30,12 @@ function gatewayOpts(env: Env, task: LlmTaskTag): Record<string, unknown> | unde
 
 type BgeResponse = { data: number[][]; shape?: number[] };
 
+/** Kimi K2.6 defaults to thinking mode; without disabling it, `content` is often empty. */
+export function isKimiModel(model: string): boolean {
+  const m = model.toLowerCase();
+  return m.includes('moonshotai/kimi') || m.includes('kimi-k2');
+}
+
 /**
  * Single entry for Workers AI text/chat models (GLM, Kimi, …).
  * All chat completions should go through here so gateway + tags stay consistent.
@@ -47,6 +53,7 @@ export async function runLLM(
     max_tokens: extra?.max_tokens ?? 512,
     temperature: extra?.temperature ?? 0.2,
     ...(extra?.response_format ? { response_format: extra.response_format } : {}),
+    ...(isKimiModel(model) ? { chat_template_kwargs: { thinking: false } } : {}),
   };
   return (env.AI as Ai).run(model as keyof AiModels, body, opts as AiOptions);
 }
@@ -66,11 +73,23 @@ export async function runEmbed(env: Env, texts: string[]): Promise<number[][]> {
 
 export type RoleMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
+type ChatMessageOut = {
+  content?: string | null;
+  /** Kimi K2.6 thinking output when `chat_template_kwargs.thinking` is enabled. */
+  reasoning?: string | null;
+  reasoning_content?: string | null;
+};
+
 export function textFromChatOut(raw: unknown): string {
   if (raw == null || typeof raw !== 'object') return '';
-  const o = raw as {
-    choices?: Array<{ message?: { content?: string | null } | null }>;
-  };
-  const c = o.choices?.[0]?.message?.content;
-  return typeof c === 'string' ? c : '';
+  const o = raw as { choices?: Array<{ message?: ChatMessageOut | null }> };
+  const msg = o.choices?.[0]?.message;
+  if (!msg) return '';
+  const content = typeof msg.content === 'string' ? msg.content : '';
+  if (content.trim().length > 0) return content;
+  if (typeof msg.reasoning === 'string' && msg.reasoning.trim().length > 0) return msg.reasoning;
+  if (typeof msg.reasoning_content === 'string' && msg.reasoning_content.trim().length > 0) {
+    return msg.reasoning_content;
+  }
+  return '';
 }

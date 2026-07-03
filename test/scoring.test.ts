@@ -50,5 +50,21 @@ describe('scoring helpers', () => {
       expect(j.score).toBe(0.45);
       expect(j.reason).toContain('no json');
     });
+
+    it('parses JSON from Kimi reasoning when content is empty', () => {
+      const raw = {
+        choices: [
+          {
+            message: {
+              content: '',
+              reasoning: '{"score":0.88,"reason":"Significant court ruling"}',
+            },
+          },
+        ],
+      };
+      const j = parseJudgment(raw);
+      expect(j.score).toBe(0.88);
+      expect(j.reason).toContain('Significant');
+    });
   });
 });

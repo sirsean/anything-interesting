@@ -11,6 +11,7 @@
  *   as the representative summary and an attached article (if any).
  */
 import type { Env } from './env';
+import { patchMarketQuotes } from './market_store';
 import { MODEL_KIMI_JUDGE, runLLM, textFromChatOut } from './llm';
 import { fetchMarketBySlug, normalizeMarket, type WatchMarket } from './polymarket';
 import { inferTopicFromTitle, topicalWeight } from './topic';
@@ -19,7 +20,7 @@ import { loadWatchlistSlugs } from './watchlist';
 const RETENTION_DAYS = 14;
 const ABSOLUTE_MOVE_THRESHOLD = 0.04;
 const RELATIVE_MOVE_THRESHOLD = 0.25;
-const STRATEGY_B_KIMI_CAP = 4;
+const STRATEGY_B_KIMI_CAP = 8;
 
 type MarketRow = {
   slug: string;
@@ -358,7 +359,15 @@ export async function runMarketSnapshotsAndStrategyB(env: Env): Promise<{
     const prev = await priorPrice(env, slug);
     try {
       await recordSnapshot(env, input);
-      if (input.yesPrice != null) snapshotted += 1;
+      if (input.yesPrice != null) {
+        snapshotted += 1;
+        await patchMarketQuotes(env.DB, slug, {
+          yesPrice: input.yesPrice,
+          volume24h: input.volume24h,
+          oneDayPriceChange: norm.oneDayPriceChange,
+          touchSnapshot: true,
+        });
+      }
     } catch (e) {
       console.error('snapshot insert failed', slug, e);
     }

@@ -10,7 +10,7 @@ const POLYMARKET_SITE = 'https://polymarket.com';
 const CLOB_BASE = 'https://clob.polymarket.com';
 
 /** Categories on /breaking/{category} (same as `biggest-movers` query param). */
-export const BREAKING_CATEGORIES = ['politics', 'world'] as const;
+export const BREAKING_CATEGORIES = ['politics', 'world', 'economics'] as const;
 export type BreakingCategory = (typeof BREAKING_CATEGORIES)[number];
 
 /** Row shape from `GET /api/biggest-movers?category=…` (Polymarket web app). */

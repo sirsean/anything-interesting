@@ -120,6 +120,9 @@ export type StatsResponse = {
   distinct_sources_last_24h: number;
   clusters_above_threshold: number;
   polymarket_matched_count: number;
+  watchlist_markets_count: number;
+  snapshotted_markets_24h: number;
+  watchlist_kv_slugs: number;
   last_digest_at: string | null;
   digest_threshold: number;
   kimi: {
@@ -132,6 +135,56 @@ export type StatsResponse = {
     };
   };
   generated_at: string;
+};
+
+export type MarketListItem = {
+  slug: string;
+  title: string;
+  category: string | null;
+  yes_price: number | null;
+  price_24h_ago: number | null;
+  one_day_price_change: number | null;
+  volume_24h: number | null;
+  last_seen_in_watchlist: string;
+  last_snapshot_at: string | null;
+  linked_clusters: number;
+  url: string;
+};
+
+export type MarketsResponse = {
+  items: MarketListItem[];
+  meta: {
+    limit: number;
+    lookback_hours: number;
+    generated_at: string;
+  };
+};
+
+export type MarketDetailResponse = {
+  market: {
+    slug: string;
+    title: string;
+    description: string | null;
+    category: string | null;
+    end_date: string | null;
+    yes_price: number | null;
+    price_24h_ago: number | null;
+    volume_24h: number | null;
+    one_day_price_change: number | null;
+    last_seen_in_watchlist: string;
+    last_snapshot_at: string | null;
+    first_seen: string;
+    last_updated: string;
+    url: string;
+  };
+  snapshots: Array<{ price: number; volume_24h: number | null; taken_at: string }>;
+  linked_clusters: Array<{
+    id: number;
+    representative_title: string;
+    final_score: number;
+    flow_type: string;
+    last_updated: string;
+  }>;
 };
 
 async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -183,4 +236,12 @@ export function fetchKimiJudgmentHistory(
 
 export function fetchDigests(limit: number, signal?: AbortSignal): Promise<DigestsResponse> {
   return fetchJson<DigestsResponse>(`/api/digests?limit=${encodeURIComponent(limit)}`, signal);
+}
+
+export function fetchMarkets(limit = 50, signal?: AbortSignal): Promise<MarketsResponse> {
+  return fetchJson<MarketsResponse>(`/api/markets?limit=${encodeURIComponent(limit)}`, signal);
+}
+
+export function fetchMarket(slug: string, signal?: AbortSignal): Promise<MarketDetailResponse> {
+  return fetchJson<MarketDetailResponse>(`/api/markets/${encodeURIComponent(slug)}`, signal);
 }

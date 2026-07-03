@@ -39,8 +39,14 @@ export default function Masthead({ stats }: Props) {
           <span>
             Market-tied <span className="strong">{stats?.polymarket_matched_count ?? '—'}</span>
           </span>
+          <span>
+            Watchlist <span className="strong">{stats?.watchlist_markets_count ?? '—'}</span>
+          </span>
         </div>
-        <Link to="/archive">Archive</Link>
+        <div className="masthead__strap-links">
+          <Link to="/markets">Markets</Link>
+          <Link to="/archive">Archive</Link>
+        </div>
       </div>
     </header>
   );

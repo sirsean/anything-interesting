@@ -103,6 +103,8 @@ Feeds in `src/sources.ts` (`M1_FEEDS`): **The Guardian** World, **BBC** World, *
 
 ---
 
+**2026-07-03 (Polymarket upgrade):** Watchlist reliability fix — refresh when CONFIG KV is missing/empty (not only cursor age); KV TTL extended to 7d; `loadWatchlistSlugs` repairs from D1 when KV absent. Watchlist expanded to **150** markets (500 volume oversample, breaking `economics` feed). D1 `markets` stores live quotes (`yes_price`, `volume_24h`, `one_day_price_change`, `last_snapshot_at`); hourly snapshots patch quotes. API: `GET /api/markets`, `GET /api/markets/:slug`. SPA: `/markets` list + `/markets/:slug` detail. Strategy B Kimi cap 8/hour.
+
 **2026-07-03:** **Kimi K2.6 fix:** `runLLM` now passes `chat_template_kwargs: { thinking: false }` for Kimi models (K2.6 defaults to thinking mode, which left `message.content` empty and pinned every judgment at the 0.45 parse fallback). `textFromChatOut` also reads `reasoning` / `reasoning_content` when `content` is empty. Strategy A Polymarket matching now runs on **every** news cluster (not only ≥3 weighted sources); vector similarity ≥ 0.70 satisfies the candidacy gate per `INITIAL.md`. **Next:** deploy, spot-check `llm_reasoning_log` for non-empty reasons + varied scores; re-evaluate clustering thresholds and surprise in `final_score` once Kimi is confirmed in prod.
 
 _Last updated: 2026-07-03 — Kimi K2.6 thinking-mode fix + per-cluster Polymarket match. Prior note: 2026-05-11 `M1_FEEDS` / M6 deploy smoke._

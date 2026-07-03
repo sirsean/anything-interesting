@@ -1,24 +1,29 @@
 /**
- * Polymarket watchlist: top-50 by 24h volume, deterministic category filter,
+ * Polymarket watchlist: breaking movers + volume backfill, category filter,
  * Kimi disambiguation on ambiguous rows, persisted to D1 + KV + Vectorize.
  *
- * Cadence (M3): refresh once every ~24h, gated on `cursors:watchlist_refreshed_at`.
+ * Reliability: CONFIG `watchlist:current` can expire while `cursors:watchlist_refreshed_at`
+ * still blocks refresh for 23h — leaving hourly snapshots with no slugs. We re-refresh when
+ * KV is missing/empty and fall back to recent D1 rows for snapshot + API reads.
  */
 import type { Env } from './env';
+import { loadWatchlistSlugsFromD1, upsertMarketRow } from './market_store';
 import { runEmbed, runLLM, MODEL_KIMI_JUDGE, textFromChatOut } from './llm';
 import {
   fetchActiveMarketsByVolume,
   fetchBreakingMarkets,
   normalizeMarket,
+  type GammaMarket,
   type WatchMarket,
 } from './polymarket';
 
-const WATCHLIST_TARGET = 50;
-const FETCH_OVERSAMPLE = 200;
-const WATCHLIST_TTL_SEC = 60 * 60 * 26; // ~26h cushion over the 24h cadence
-const WATCHLIST_KV_KEY = 'watchlist:current';
-const WATCHLIST_CURSOR_KEY = 'cursors:watchlist_refreshed_at';
-const REFRESH_AFTER_HOURS = 23;
+export const WATCHLIST_TARGET = 150;
+const FETCH_OVERSAMPLE = 500;
+/** Long TTL — cursor gates refresh cadence; short KV TTL caused snapshot outages. */
+const WATCHLIST_KV_TTL_SEC = 60 * 60 * 24 * 7;
+export const WATCHLIST_KV_KEY = 'watchlist:current';
+export const WATCHLIST_CURSOR_KEY = 'cursors:watchlist_refreshed_at';
+export const REFRESH_AFTER_HOURS = 23;
 
 /** Tag/category substrings that must always be dropped (deterministic filter). */
 const BLOCK_TAGS = [
@@ -82,6 +87,32 @@ const KEEP_TAGS = [
 
 type Verdict = 'keep' | 'drop' | 'ambiguous';
 
+export function parseWatchlistKv(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const j = JSON.parse(raw) as { slugs?: string[] };
+    return Array.isArray(j.slugs) ? j.slugs.filter((s): s is string => typeof s === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Pure helper for refresh gating tests. */
+export function needsWatchlistRefresh(opts: {
+  force: boolean;
+  cursorIso: string | null;
+  kvSlugs: string[];
+  nowMs: number;
+}): boolean {
+  if (opts.force) return true;
+  if (opts.kvSlugs.length === 0) return true;
+  if (!opts.cursorIso) return true;
+  const t = Date.parse(opts.cursorIso);
+  if (!Number.isFinite(t)) return true;
+  const hours = (opts.nowMs - t) / 3600000;
+  return hours >= REFRESH_AFTER_HOURS;
+}
+
 function classifyByTags(m: WatchMarket): Verdict {
   const slug = m.slug.toLowerCase();
   for (const blk of BLOCK_TAGS) {
@@ -103,7 +134,6 @@ function classifyByTags(m: WatchMarket): Verdict {
   return 'ambiguous';
 }
 
-/** Kimi binary keep/drop with strict JSON output. Defaults to drop on parse failure. */
 async function kimiDisambiguate(env: Env, m: WatchMarket): Promise<boolean> {
   const raw = await runLLM(
     env,
@@ -134,25 +164,22 @@ async function kimiDisambiguate(env: Env, m: WatchMarket): Promise<boolean> {
 }
 
 async function shouldRefresh(env: Env, force: boolean): Promise<boolean> {
-  if (force) return true;
+  const kvSlugs = parseWatchlistKv(await env.CONFIG.get(WATCHLIST_KV_KEY));
   const cursor = await env.CONFIG.get(WATCHLIST_CURSOR_KEY);
-  if (!cursor) return true;
-  const t = Date.parse(cursor);
-  if (!Number.isFinite(t)) return true;
-  const hours = (Date.now() - t) / 3600000;
-  return hours >= REFRESH_AFTER_HOURS;
+  return needsWatchlistRefresh({ force, cursorIso: cursor, kvSlugs, nowMs: Date.now() });
 }
 
-/** Persist watchlist KV blob + cursor + per-market D1 + Vectorize embeddings. */
 async function persistWatchlist(env: Env, kept: WatchMarket[]): Promise<void> {
   const nowIso = new Date().toISOString();
-  await env.CONFIG.put(WATCHLIST_KV_KEY, JSON.stringify({ at: nowIso, slugs: kept.map((m) => m.slug) }), {
-    expirationTtl: WATCHLIST_TTL_SEC,
-  });
+  await env.CONFIG.put(
+    WATCHLIST_KV_KEY,
+    JSON.stringify({ at: nowIso, slugs: kept.map((m) => m.slug) }),
+    { expirationTtl: WATCHLIST_KV_TTL_SEC },
+  );
 
   if (kept.length === 0) {
     await env.CONFIG.put(WATCHLIST_CURSOR_KEY, nowIso);
-    console.log(`persistWatchlist empty kept=0 cursor=${nowIso}`);
+    console.warn(`persistWatchlist empty kept=0 cursor=${nowIso}`);
     return;
   }
 
@@ -166,41 +193,14 @@ async function persistWatchlist(env: Env, kept: WatchMarket[]): Promise<void> {
 
   for (let i = 0; i < kept.length; i++) {
     const m = kept[i];
-    const vecId = `m:${m.slug}`;
-    await env.DB
-      .prepare(
-        `INSERT INTO markets (slug, title, description, category, end_date, vec_id,
-            yes_token_id, last_seen_in_watchlist, last_updated)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(slug) DO UPDATE SET
-            title = excluded.title,
-            description = excluded.description,
-            category = excluded.category,
-            end_date = excluded.end_date,
-            vec_id = excluded.vec_id,
-            yes_token_id = excluded.yes_token_id,
-            last_seen_in_watchlist = excluded.last_seen_in_watchlist,
-            last_updated = excluded.last_updated`,
-      )
-      .bind(
-        m.slug,
-        m.title,
-        m.description,
-        m.category,
-        m.endDate,
-        vecId,
-        m.yesTokenId,
-        nowIso,
-        nowIso,
-      )
-      .run();
+    await upsertMarketRow(env, m);
 
     const vec = vecs[i];
     if (!vec || vec.length === 0) continue;
     try {
       await env.MARKETS.upsert([
         {
-          id: vecId,
+          id: `m:${m.slug}`,
           values: vec,
           metadata: {
             slug: m.slug,
@@ -247,10 +247,10 @@ export async function refreshWatchlistIfDue(env: Env, opts?: { force?: boolean }
   let volumeRaw = 0;
   let volumeNorm = 0;
   let kimiCalls = 0;
-  const KIMI_CAP = 30;
+  const KIMI_CAP = 40;
 
   if (kept.length < WATCHLIST_TARGET) {
-    let raw;
+    let raw: GammaMarket[] = [];
     try {
       raw = await fetchActiveMarketsByVolume(FETCH_OVERSAMPLE);
       volumeRaw = raw.length;
@@ -294,14 +294,21 @@ export async function refreshWatchlistIfDue(env: Env, opts?: { force?: boolean }
   return kept.map((m) => m.slug);
 }
 
-/** Read the current watchlist slugs from KV (or empty list if not set). */
+/**
+ * Current watchlist slugs: CONFIG KV first, then repair from D1 when KV is missing.
+ */
 export async function loadWatchlistSlugs(env: Env): Promise<string[]> {
-  const raw = await env.CONFIG.get(WATCHLIST_KV_KEY);
-  if (!raw) return [];
-  try {
-    const j = JSON.parse(raw) as { slugs?: string[] };
-    return Array.isArray(j.slugs) ? j.slugs : [];
-  } catch {
-    return [];
+  const fromKv = parseWatchlistKv(await env.CONFIG.get(WATCHLIST_KV_KEY));
+  if (fromKv.length > 0) return fromKv;
+
+  const fromD1 = await loadWatchlistSlugsFromD1(env.DB, WATCHLIST_TARGET);
+  if (fromD1.length > 0) {
+    await env.CONFIG.put(
+      WATCHLIST_KV_KEY,
+      JSON.stringify({ at: new Date().toISOString(), slugs: fromD1, repaired_from_d1: true }),
+      { expirationTtl: WATCHLIST_KV_TTL_SEC },
+    );
+    console.log(`watchlist KV repaired from D1 count=${fromD1.length}`);
   }
+  return fromD1;
 }

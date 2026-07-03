@@ -8,6 +8,7 @@ import {
   isKimiJudgmentDay,
   listKimiJudgmentUsage,
 } from './kimi_budget';
+import { WATCHLIST_D1_LOOKBACK_HOURS } from './market_store';
 import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
 
 const ALLOWED_TOPICS = new Set(['geopolitics', 'politics', 'economics', 'technology']);
@@ -18,6 +19,8 @@ const TOPNEWS_DEFAULT_WINDOW_HOURS = 24;
 const TOPNEWS_MAX_WINDOW_HOURS = 24 * 7;
 const DIGESTS_DEFAULT_LIMIT = 10;
 const DIGESTS_MAX_LIMIT = 50;
+const MARKETS_DEFAULT_LIMIT = 50;
+const MARKETS_MAX_LIMIT = 150;
 
 const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
@@ -471,26 +474,42 @@ async function handleStats(env: Env, now: Date): Promise<Response> {
          (SELECT COUNT(*) FROM articles WHERE datetime(fetched_at) >= datetime('now', '-24 hours')) AS articles_last_24h,
          (SELECT COUNT(DISTINCT source) FROM articles WHERE datetime(fetched_at) >= datetime('now', '-24 hours')) AS distinct_sources_last_24h,
          (SELECT COUNT(*) FROM clusters WHERE final_score >= ? AND posted_digest_id IS NULL) AS clusters_above_threshold,
-         (SELECT COUNT(*) FROM clusters WHERE polymarket_slug IS NOT NULL AND datetime(last_updated) >= datetime('now', '-24 hours')) AS polymarket_matched_count`,
+         (SELECT COUNT(*) FROM clusters WHERE polymarket_slug IS NOT NULL AND datetime(last_updated) >= datetime('now', '-24 hours')) AS polymarket_matched_count,
+         (SELECT COUNT(*) FROM markets WHERE datetime(last_seen_in_watchlist) >= datetime('now', ?)) AS watchlist_markets_count,
+         (SELECT COUNT(*) FROM markets WHERE last_snapshot_at IS NOT NULL AND datetime(last_snapshot_at) >= datetime('now', '-24 hours')) AS snapshotted_markets_24h`,
     )
-    .bind(MIN_FINAL_SCORE)
+    .bind(MIN_FINAL_SCORE, `-${WATCHLIST_D1_LOOKBACK_HOURS} hours`)
     .first<{
       articles_last_24h: number;
       distinct_sources_last_24h: number;
       clusters_above_threshold: number;
       polymarket_matched_count: number;
+      watchlist_markets_count: number;
+      snapshotted_markets_24h: number;
     }>();
 
-  const [lastDigest, kimi] = await Promise.all([
+  const [lastDigest, kimi, watchlistKv] = await Promise.all([
     env.CONFIG.get('cursors:last_digest_at'),
     getKimiJudgmentUsage(env, now),
+    env.CONFIG.get('watchlist:current'),
   ]);
+
+  let watchlist_kv_slugs = 0;
+  try {
+    const j = watchlistKv ? (JSON.parse(watchlistKv) as { slugs?: string[] }) : null;
+    watchlist_kv_slugs = Array.isArray(j?.slugs) ? j.slugs.length : 0;
+  } catch {
+    watchlist_kv_slugs = 0;
+  }
 
   return jsonResponse({
     articles_last_24h: stats?.articles_last_24h ?? 0,
     distinct_sources_last_24h: stats?.distinct_sources_last_24h ?? 0,
     clusters_above_threshold: stats?.clusters_above_threshold ?? 0,
     polymarket_matched_count: stats?.polymarket_matched_count ?? 0,
+    watchlist_markets_count: stats?.watchlist_markets_count ?? 0,
+    snapshotted_markets_24h: stats?.snapshotted_markets_24h ?? 0,
+    watchlist_kv_slugs,
     last_digest_at: lastDigest,
     digest_threshold: MIN_FINAL_SCORE,
     kimi: {
@@ -502,6 +521,140 @@ async function handleStats(env: Env, now: Date): Promise<Response> {
       },
     },
     generated_at: now.toISOString(),
+  });
+}
+
+type MarketListRow = {
+  slug: string;
+  title: string;
+  category: string | null;
+  yes_price: number | null;
+  volume_24h: number | null;
+  one_day_price_change: number | null;
+  last_seen_in_watchlist: string;
+  last_snapshot_at: string | null;
+  price_24h_ago: number | null;
+  linked_clusters: number;
+};
+
+async function handleMarkets(env: Env, url: URL): Promise<Response> {
+  const limit = clampInt(url.searchParams.get('limit'), MARKETS_DEFAULT_LIMIT, 1, MARKETS_MAX_LIMIT);
+  const lookback = `-${WATCHLIST_D1_LOOKBACK_HOURS} hours`;
+
+  const { results } = await env.DB
+    .prepare(
+      `SELECT m.slug, m.title, m.category, m.yes_price, m.volume_24h, m.one_day_price_change,
+              m.last_seen_in_watchlist, m.last_snapshot_at,
+              (
+                SELECT ms.price FROM market_snapshots ms
+                WHERE ms.market_slug = m.slug
+                  AND datetime(ms.taken_at) BETWEEN datetime('now', '-26 hours')
+                                                AND datetime('now', '-22 hours')
+                ORDER BY ABS(strftime('%s', ms.taken_at) - strftime('%s','now','-24 hours')) ASC
+                LIMIT 1
+              ) AS price_24h_ago,
+              (SELECT COUNT(*) FROM clusters c WHERE c.polymarket_slug = m.slug) AS linked_clusters
+       FROM markets m
+       WHERE datetime(m.last_seen_in_watchlist) >= datetime('now', ?)
+       ORDER BY COALESCE(m.volume_24h, 0) DESC, m.last_seen_in_watchlist DESC
+       LIMIT ?`,
+    )
+    .bind(lookback, limit)
+    .all<MarketListRow>();
+
+  return jsonResponse({
+    items: (results ?? []).map((r) => ({
+      slug: r.slug,
+      title: r.title,
+      category: r.category,
+      yes_price: r.yes_price,
+      price_24h_ago: r.price_24h_ago,
+      one_day_price_change: r.one_day_price_change,
+      volume_24h: r.volume_24h,
+      last_seen_in_watchlist: r.last_seen_in_watchlist,
+      last_snapshot_at: r.last_snapshot_at,
+      linked_clusters: r.linked_clusters,
+      url: `https://polymarket.com/event/${encodeURIComponent(r.slug)}`,
+    })),
+    meta: {
+      limit,
+      lookback_hours: WATCHLIST_D1_LOOKBACK_HOURS,
+      generated_at: new Date().toISOString(),
+    },
+  });
+}
+
+async function handleMarketDetail(env: Env, slug: string): Promise<Response> {
+  const row = await env.DB
+    .prepare(
+      `SELECT slug, title, description, category, end_date, yes_price, volume_24h,
+              one_day_price_change, last_seen_in_watchlist, last_snapshot_at, first_seen, last_updated
+       FROM markets WHERE slug = ?`,
+    )
+    .bind(slug)
+    .first<{
+      slug: string;
+      title: string;
+      description: string | null;
+      category: string | null;
+      end_date: string | null;
+      yes_price: number | null;
+      volume_24h: number | null;
+      one_day_price_change: number | null;
+      last_seen_in_watchlist: string;
+      last_snapshot_at: string | null;
+      first_seen: string;
+      last_updated: string;
+    }>();
+
+  if (!row) {
+    return errorResponse(404, 'Market not found');
+  }
+
+  const [snapshots, linkedClusters, price24h] = await Promise.all([
+    env.DB
+      .prepare(
+        `SELECT price, volume_24h, taken_at FROM market_snapshots
+         WHERE market_slug = ?
+         ORDER BY datetime(taken_at) DESC LIMIT 48`,
+      )
+      .bind(slug)
+      .all<{ price: number; volume_24h: number | null; taken_at: string }>(),
+    env.DB
+      .prepare(
+        `SELECT id, representative_title, final_score, flow_type, last_updated
+         FROM clusters WHERE polymarket_slug = ?
+         ORDER BY final_score DESC LIMIT 12`,
+      )
+      .bind(slug)
+      .all<{
+        id: number;
+        representative_title: string;
+        final_score: number;
+        flow_type: string;
+        last_updated: string;
+      }>(),
+    env.DB
+      .prepare(
+        `SELECT price FROM market_snapshots
+         WHERE market_slug = ?
+           AND datetime(taken_at) BETWEEN datetime('now', '-26 hours')
+                                     AND datetime('now', '-22 hours')
+         ORDER BY ABS(strftime('%s', taken_at) - strftime('%s','now','-24 hours')) ASC
+         LIMIT 1`,
+      )
+      .bind(slug)
+      .first<{ price: number }>(),
+  ]);
+
+  return jsonResponse({
+    market: {
+      ...row,
+      price_24h_ago: price24h?.price ?? null,
+      url: `https://polymarket.com/event/${encodeURIComponent(row.slug)}`,
+    },
+    snapshots: snapshots.results ?? [],
+    linked_clusters: linkedClusters.results ?? [],
   });
 }
 
@@ -556,6 +709,13 @@ export async function handleApiRequest(req: Request, env: Env): Promise<Response
     }
     if (pathname === '/api/stats') {
       return await handleStats(env, now);
+    }
+    if (pathname === '/api/markets') {
+      return await handleMarkets(env, url);
+    }
+    const marketMatch = pathname.match(/^\/api\/markets\/([^/]+)$/);
+    if (marketMatch) {
+      return await handleMarketDetail(env, decodeURIComponent(marketMatch[1]));
     }
     const clusterMatch = pathname.match(/^\/api\/clusters\/(\d+)$/);
     if (clusterMatch) {

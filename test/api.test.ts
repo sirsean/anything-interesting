@@ -8,6 +8,8 @@ type StatsRow = {
   distinct_sources_last_24h: number;
   clusters_above_threshold: number;
   polymarket_matched_count: number;
+  watchlist_markets_count: number;
+  snapshotted_markets_24h: number;
 };
 
 function makeEnv(opts: {
@@ -22,6 +24,8 @@ function makeEnv(opts: {
     distinct_sources_last_24h: 3,
     clusters_above_threshold: 2,
     polymarket_matched_count: 1,
+    watchlist_markets_count: 12,
+    snapshotted_markets_24h: 10,
   };
 
   const fakeDb = {
@@ -51,6 +55,7 @@ function makeEnv(opts: {
         return n != null ? String(n) : null;
       }
       if (key === 'cursors:last_digest_at') return opts.lastDigest ?? null;
+      if (key === 'watchlist:current') return JSON.stringify({ slugs: ['m1', 'm2'] });
       return null;
     },
     list: async ({ prefix }: { prefix?: string }) => {

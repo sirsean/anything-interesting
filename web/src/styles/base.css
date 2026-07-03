@@ -198,6 +198,12 @@ button {
   margin-left: 0.4rem;
 }
 
+.masthead__strap-links {
+  display: flex;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+
 /* ---------- nav (topic filter chips) ------------------------------- */
 
 .topicnav {

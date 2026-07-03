@@ -1,4 +1,5 @@
 import type { DiscordEmbed } from './discord';
+import { polymarketEventUrl } from './polymarket';
 
 export type ClusterRowForEmbed = {
   id: number;
@@ -45,20 +46,31 @@ export function marketDrivenDescription(rep: string, c: ClusterRowForEmbed): str
 
 export async function loadMarketTitle(db: D1Database, slug: string): Promise<string | null> {
   const row = await db
-    .prepare(`SELECT title FROM markets WHERE slug = ?`)
+    .prepare(`SELECT title, event_slug, event_title FROM markets WHERE slug = ?`)
     .bind(slug)
-    .first<{ title: string }>();
-  return row?.title ?? null;
+    .first<{ title: string; event_slug: string | null; event_title: string | null }>();
+  if (!row) return null;
+  if (row.event_title && row.event_slug && row.event_slug !== slug) return row.event_title;
+  return row.title;
+}
+
+export async function loadMarketEventSlug(db: D1Database, slug: string): Promise<string | null> {
+  const row = await db
+    .prepare(`SELECT event_slug FROM markets WHERE slug = ?`)
+    .bind(slug)
+    .first<{ event_slug: string | null }>();
+  return row?.event_slug ?? null;
 }
 
 export function polymarketField(
   c: ClusterRowForEmbed,
   marketTitle: string | null,
+  eventSlug?: string | null,
 ): { name: string; value: string; inline: boolean } | null {
   if (!c.polymarket_slug) {
     return null;
   }
-  const url = `https://polymarket.com/event/${encodeURIComponent(c.polymarket_slug)}`;
+  const url = polymarketEventUrl(c.polymarket_slug, eventSlug);
   const title = (marketTitle ?? c.polymarket_slug).slice(0, 200);
   const now = c.polymarket_price;
   const prev = c.polymarket_price_24h_ago;
@@ -127,14 +139,16 @@ export async function buildClusterDiscordEmbed(input: ClusterEmbedBuildInput): P
     if (articleUrl != null) {
       url = articleUrl;
     } else if (c.polymarket_slug) {
-      url = `https://polymarket.com/event/${encodeURIComponent(c.polymarket_slug)}`;
+      const eventSlug = await loadMarketEventSlug(db, c.polymarket_slug);
+      url = polymarketEventUrl(c.polymarket_slug, eventSlug);
     } else {
       url = 'https://polymarket.com';
     }
   }
 
   const marketTitle = c.polymarket_slug ? await loadMarketTitle(db, c.polymarket_slug) : null;
-  const polymarket = polymarketField(c, marketTitle);
+  const eventSlug = c.polymarket_slug ? await loadMarketEventSlug(db, c.polymarket_slug) : null;
+  const polymarket = polymarketField(c, marketTitle, eventSlug);
   const flavor = isMarketDriven ? 'market-driven' : 'news-driven';
 
   const fields = [

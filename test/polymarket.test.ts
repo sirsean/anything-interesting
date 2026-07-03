@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   biggestMoverToGamma,
+  marketDisplayTitle,
+  marketOutcomeLabel,
   normalizeMarket,
+  polymarketEventUrl,
   type BiggestMoverMarket,
   type GammaMarket,
 } from '../src/polymarket';
@@ -81,5 +84,42 @@ describe('polymarket normalizeMarket', () => {
       closed: false,
     } as GammaMarket);
     expect(w!.tagLabels).toEqual(['politics', 'elections']);
+  });
+
+  it('extracts parent event slug for neg-risk outcome markets', () => {
+    const w = normalizeMarket({
+      id: '2063131',
+      slug: 'will-alesa-mengesha-be-the-next-prime-minister-of-ethiopia',
+      question: 'Will Alesa Mengesha be the next Prime Minister of Ethiopia?',
+      groupItemTitle: 'Alesa Mengesha',
+      outcomes: '["Yes", "No"]',
+      outcomePrices: '["0.002", "0.998"]',
+      closed: false,
+      events: [
+        {
+          slug: 'next-prime-minister-of-ethiopia',
+          title: 'Next Prime Minister of Ethiopia?',
+        },
+      ],
+    } as GammaMarket);
+    expect(w!.eventSlug).toBe('next-prime-minister-of-ethiopia');
+    expect(w!.groupItemTitle).toBe('Alesa Mengesha');
+    expect(marketDisplayTitle(w!)).toBe('Next Prime Minister of Ethiopia?');
+    expect(marketOutcomeLabel(w!)).toBe('Alesa Mengesha');
+    expect(polymarketEventUrl(w!.slug, w!.eventSlug)).toBe(
+      'https://polymarket.com/event/next-prime-minister-of-ethiopia',
+    );
+  });
+
+  it('passes parent event through biggest-movers mapping', () => {
+    const row: BiggestMoverMarket = {
+      id: '1',
+      slug: 'will-trump-speak-to-ahmed-al-sharaa-in-june',
+      question: 'Will Trump speak to Ahmed al-Sharaa in June?',
+      closed: false,
+      events: [{ slug: 'who-will-trump-speak-to-in-june', title: 'Who will Trump speak to in June?' }],
+    };
+    const w = normalizeMarket(biggestMoverToGamma(row, 'politics'));
+    expect(w!.eventSlug).toBe('who-will-trump-speak-to-in-june');
   });
 });

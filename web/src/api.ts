@@ -7,7 +7,11 @@ export type ClusterScores = {
 
 export type ClusterPolymarket = {
   slug: string;
+  event_slug: string | null;
   title: string | null;
+  event_title: string | null;
+  outcome_label: string | null;
+  url: string;
   price_now: number | null;
   price_24h_ago: number | null;
   match_score: number;
@@ -140,7 +144,11 @@ export type StatsResponse = {
 export type MarketListItem = {
   slug: string;
   title: string;
+  display_title: string;
+  outcome_label: string | null;
   category: string | null;
+  event_slug: string | null;
+  event_title: string | null;
   yes_price: number | null;
   price_24h_ago: number | null;
   one_day_price_change: number | null;
@@ -164,9 +172,14 @@ export type MarketDetailResponse = {
   market: {
     slug: string;
     title: string;
+    display_title: string;
+    outcome_label: string | null;
     description: string | null;
     category: string | null;
     end_date: string | null;
+    event_slug: string | null;
+    event_title: string | null;
+    group_item_title: string | null;
     yes_price: number | null;
     price_24h_ago: number | null;
     volume_24h: number | null;

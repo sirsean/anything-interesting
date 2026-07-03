@@ -9,6 +9,11 @@ import {
   listKimiJudgmentUsage,
 } from './kimi_budget';
 import { WATCHLIST_D1_LOOKBACK_HOURS } from './market_store';
+import {
+  marketDisplayTitle,
+  marketOutcomeLabel,
+  polymarketEventUrl,
+} from './polymarket';
 import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
 
 const ALLOWED_TOPICS = new Set(['geopolitics', 'politics', 'economics', 'technology']);
@@ -151,18 +156,52 @@ async function fetchSourcesByCluster(
   return out;
 }
 
-async function fetchMarketTitles(
+async function fetchMarketMeta(
   db: D1Database,
   slugs: string[],
-): Promise<Map<string, string>> {
+): Promise<
+  Map<
+    string,
+    {
+      title: string;
+      event_slug: string | null;
+      event_title: string | null;
+      group_item_title: string | null;
+    }
+  >
+> {
   if (slugs.length === 0) return new Map();
   const ph = slugs.map(() => '?').join(',');
   const { results } = await db
-    .prepare(`SELECT slug, title FROM markets WHERE slug IN (${ph})`)
+    .prepare(
+      `SELECT slug, title, event_slug, event_title, group_item_title
+       FROM markets WHERE slug IN (${ph})`,
+    )
     .bind(...slugs)
-    .all<{ slug: string; title: string }>();
-  const out = new Map<string, string>();
-  for (const r of results ?? []) out.set(r.slug, r.title);
+    .all<{
+      slug: string;
+      title: string;
+      event_slug: string | null;
+      event_title: string | null;
+      group_item_title: string | null;
+    }>();
+  const out = new Map<
+    string,
+    {
+      title: string;
+      event_slug: string | null;
+      event_title: string | null;
+      group_item_title: string | null;
+    }
+  >();
+  for (const r of results ?? []) {
+    out.set(r.slug, {
+      title: r.title,
+      event_slug: r.event_slug,
+      event_title: r.event_title,
+      group_item_title: r.group_item_title,
+    });
+  }
   return out;
 }
 
@@ -201,7 +240,11 @@ export type ClusterApiItem = {
   top_article: { title: string; url: string; source: string; fetched_at: string } | null;
   polymarket: {
     slug: string;
+    event_slug: string | null;
     title: string | null;
+    event_title: string | null;
+    outcome_label: string | null;
+    url: string;
     price_now: number | null;
     price_24h_ago: number | null;
     match_score: number;
@@ -221,7 +264,14 @@ function shapeClusterItem(
   row: ClusterApiRow,
   topArticle: TopArticleRow | undefined,
   sources: string[],
-  marketTitle: string | null,
+  marketMeta:
+    | {
+        title: string;
+        event_slug: string | null;
+        event_title: string | null;
+        group_item_title: string | null;
+      }
+    | undefined,
   now: Date,
 ): ClusterApiItem {
   const polymarket =
@@ -229,7 +279,19 @@ function shapeClusterItem(
       ? null
       : {
           slug: row.polymarket_slug,
-          title: marketTitle,
+          event_slug: marketMeta?.event_slug ?? null,
+          title: marketMeta?.title ?? null,
+          event_title: marketMeta?.event_title ?? null,
+          outcome_label:
+            marketMeta != null
+              ? marketOutcomeLabel({
+                  title: marketMeta.title,
+                  slug: row.polymarket_slug,
+                  eventSlug: marketMeta.event_slug,
+                  groupItemTitle: marketMeta.group_item_title,
+                })
+              : null,
+          url: polymarketEventUrl(row.polymarket_slug, marketMeta?.event_slug),
           price_now: row.polymarket_price,
           price_24h_ago: row.polymarket_price_24h_ago,
           match_score: row.polymarket_match_score,
@@ -282,17 +344,17 @@ async function shapeClustersBatch(
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
   const slugs = [...new Set(rows.map((r) => r.polymarket_slug).filter((s): s is string => !!s))];
-  const [topArticles, sourceMap, marketTitles] = await Promise.all([
+  const [topArticles, sourceMap, marketMeta] = await Promise.all([
     fetchTopArticles(db, ids),
     fetchSourcesByCluster(db, ids),
-    fetchMarketTitles(db, slugs),
+    fetchMarketMeta(db, slugs),
   ]);
   return rows.map((r) =>
     shapeClusterItem(
       r,
       topArticles.get(r.id),
       sourceMap.get(r.id) ?? [],
-      r.polymarket_slug ? marketTitles.get(r.polymarket_slug) ?? null : null,
+      r.polymarket_slug ? marketMeta.get(r.polymarket_slug) : undefined,
       now,
     ),
   );
@@ -535,6 +597,9 @@ type MarketListRow = {
   last_snapshot_at: string | null;
   price_24h_ago: number | null;
   linked_clusters: number;
+  event_slug: string | null;
+  event_title: string | null;
+  group_item_title: string | null;
 };
 
 async function handleMarkets(env: Env, url: URL): Promise<Response> {
@@ -544,7 +609,7 @@ async function handleMarkets(env: Env, url: URL): Promise<Response> {
   const { results } = await env.DB
     .prepare(
       `SELECT m.slug, m.title, m.category, m.yes_price, m.volume_24h, m.one_day_price_change,
-              m.last_seen_in_watchlist, m.last_snapshot_at,
+              m.last_seen_in_watchlist, m.last_snapshot_at, m.event_slug, m.event_title, m.group_item_title,
               (
                 SELECT ms.price FROM market_snapshots ms
                 WHERE ms.market_slug = m.slug
@@ -566,7 +631,21 @@ async function handleMarkets(env: Env, url: URL): Promise<Response> {
     items: (results ?? []).map((r) => ({
       slug: r.slug,
       title: r.title,
+      display_title: marketDisplayTitle({
+        title: r.title,
+        slug: r.slug,
+        eventSlug: r.event_slug,
+        eventTitle: r.event_title,
+      }),
+      outcome_label: marketOutcomeLabel({
+        title: r.title,
+        slug: r.slug,
+        eventSlug: r.event_slug,
+        groupItemTitle: r.group_item_title,
+      }),
       category: r.category,
+      event_slug: r.event_slug,
+      event_title: r.event_title,
       yes_price: r.yes_price,
       price_24h_ago: r.price_24h_ago,
       one_day_price_change: r.one_day_price_change,
@@ -574,7 +653,7 @@ async function handleMarkets(env: Env, url: URL): Promise<Response> {
       last_seen_in_watchlist: r.last_seen_in_watchlist,
       last_snapshot_at: r.last_snapshot_at,
       linked_clusters: r.linked_clusters,
-      url: `https://polymarket.com/event/${encodeURIComponent(r.slug)}`,
+      url: polymarketEventUrl(r.slug, r.event_slug),
     })),
     meta: {
       limit,
@@ -588,7 +667,8 @@ async function handleMarketDetail(env: Env, slug: string): Promise<Response> {
   const row = await env.DB
     .prepare(
       `SELECT slug, title, description, category, end_date, yes_price, volume_24h,
-              one_day_price_change, last_seen_in_watchlist, last_snapshot_at, first_seen, last_updated
+              one_day_price_change, last_seen_in_watchlist, last_snapshot_at, first_seen, last_updated,
+              event_slug, event_title, group_item_title
        FROM markets WHERE slug = ?`,
     )
     .bind(slug)
@@ -605,6 +685,9 @@ async function handleMarketDetail(env: Env, slug: string): Promise<Response> {
       last_snapshot_at: string | null;
       first_seen: string;
       last_updated: string;
+      event_slug: string | null;
+      event_title: string | null;
+      group_item_title: string | null;
     }>();
 
   if (!row) {
@@ -650,8 +733,20 @@ async function handleMarketDetail(env: Env, slug: string): Promise<Response> {
   return jsonResponse({
     market: {
       ...row,
+      display_title: marketDisplayTitle({
+        title: row.title,
+        slug: row.slug,
+        eventSlug: row.event_slug,
+        eventTitle: row.event_title,
+      }),
+      outcome_label: marketOutcomeLabel({
+        title: row.title,
+        slug: row.slug,
+        eventSlug: row.event_slug,
+        groupItemTitle: row.group_item_title,
+      }),
       price_24h_ago: price24h?.price ?? null,
-      url: `https://polymarket.com/event/${encodeURIComponent(row.slug)}`,
+      url: polymarketEventUrl(row.slug, row.event_slug),
     },
     snapshots: snapshots.results ?? [],
     linked_clusters: linkedClusters.results ?? [],

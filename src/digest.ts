@@ -1,9 +1,11 @@
 import { postDigestWebhook, type DiscordEmbed } from './discord';
 import {
   buildClusterDiscordEmbed,
+  loadMarketEventSlug,
   marketDrivenDescription,
   type ClusterRowForEmbed,
 } from './discord_cluster_embed';
+import { polymarketEventUrl } from './polymarket';
 import { EXCEPTIONAL_SCORE, MIN_FINAL_SCORE, MIN_WEIGHTED_SOURCE_COVERAGE } from './digest_constants';
 import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
 import type { Env } from './env';
@@ -155,7 +157,10 @@ export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
     const title = (isMarketDriven ? `📈 ${baseTitle}` : baseTitle).slice(0, 256);
     const url = top?.url
       ?? (c.polymarket_slug
-        ? `https://polymarket.com/event/${encodeURIComponent(c.polymarket_slug)}`
+        ? polymarketEventUrl(
+            c.polymarket_slug,
+            await loadMarketEventSlug(env.DB, c.polymarket_slug),
+          )
         : 'https://polymarket.com');
     const desc = isMarketDriven
       ? marketDrivenDescription(c.representative_title, c)

@@ -13,6 +13,13 @@ const CLOB_BASE = 'https://clob.polymarket.com';
 export const BREAKING_CATEGORIES = ['politics', 'world', 'economics'] as const;
 export type BreakingCategory = (typeof BREAKING_CATEGORIES)[number];
 
+/** Nested parent event on Gamma market rows (neg-risk / multi-outcome groups). */
+export type GammaEventRef = {
+  slug?: string | null;
+  title?: string | null;
+  volume?: number | null;
+};
+
 /** Row shape from `GET /api/biggest-movers?category=…` (Polymarket web app). */
 export type BiggestMoverMarket = {
   id: string;
@@ -23,7 +30,7 @@ export type BiggestMoverMarket = {
   oneDayPriceChange?: number | null;
   currentPrice?: number | null;
   closed?: boolean | null;
-  events?: { volume?: number | null }[] | null;
+  events?: GammaEventRef[] | null;
 };
 
 const UA =
@@ -55,6 +62,9 @@ export type GammaMarket = {
   bestBid?: number | null;
   bestAsk?: number | null;
   tags?: { id?: string; label?: string | null; slug?: string | null }[] | null;
+  events?: GammaEventRef[] | null;
+  /** Neg-risk outcome label, e.g. "Alesa Mengesha" within a PM election event. */
+  groupItemTitle?: string | null;
 };
 
 export type WatchMarket = {
@@ -70,7 +80,38 @@ export type WatchMarket = {
   oneDayPriceChange: number | null;
   volume24h: number | null;
   tagLabels: string[];
+  /** Parent event slug for polymarket.com URLs (when this row is one outcome market). */
+  eventSlug: string | null;
+  eventTitle: string | null;
+  groupItemTitle: string | null;
 };
+
+/**
+ * Polymarket.com `/event/{slug}` uses the parent **event** slug. Gamma also returns
+ * per-outcome **market** slugs (neg-risk) that 404 at `/event/{market-slug}`.
+ */
+export function polymarketEventUrl(marketSlug: string, eventSlug?: string | null): string {
+  const slug =
+    eventSlug && eventSlug.trim().length > 0 && eventSlug !== marketSlug
+      ? eventSlug
+      : marketSlug;
+  return `${POLYMARKET_SITE}/event/${encodeURIComponent(slug)}`;
+}
+
+/** Headline for UI: parent event title when this market is one outcome in a group. */
+export function marketDisplayTitle(m: Pick<WatchMarket, 'title' | 'eventSlug' | 'eventTitle' | 'slug'>): string {
+  if (m.eventTitle && m.eventSlug && m.eventSlug !== m.slug) return m.eventTitle;
+  return m.title;
+}
+
+/** Sub-label for grouped outcome markets (candidate name, etc.). */
+export function marketOutcomeLabel(
+  m: Pick<WatchMarket, 'title' | 'eventSlug' | 'slug' | 'groupItemTitle'>,
+): string | null {
+  if (m.groupItemTitle?.trim()) return m.groupItemTitle.trim();
+  if (m.eventSlug && m.eventSlug !== m.slug) return m.title;
+  return null;
+}
 
 function safeJson<T>(s: string | null | undefined): T | null {
   if (!s) return null;
@@ -115,6 +156,12 @@ export function normalizeMarket(m: GammaMarket): WatchMarket | null {
     .map((t) => (t?.label ?? t?.slug ?? '').toString().trim().toLowerCase())
     .filter((s) => s.length > 0);
 
+  const parent = m.events?.[0];
+  const eventSlug = typeof parent?.slug === 'string' && parent.slug.trim() ? parent.slug.trim() : null;
+  const eventTitle = typeof parent?.title === 'string' && parent.title.trim() ? parent.title.trim() : null;
+  const groupItemTitle =
+    typeof m.groupItemTitle === 'string' && m.groupItemTitle.trim() ? m.groupItemTitle.trim() : null;
+
   return {
     slug: m.slug,
     title: title.slice(0, 500),
@@ -130,6 +177,9 @@ export function normalizeMarket(m: GammaMarket): WatchMarket | null {
     volume24h:
       typeof m.volume24hr === 'number' && Number.isFinite(m.volume24hr) ? m.volume24hr : null,
     tagLabels,
+    eventSlug,
+    eventTitle: eventTitle?.slice(0, 500) ?? null,
+    groupItemTitle: groupItemTitle?.slice(0, 200) ?? null,
   };
 }
 
@@ -152,6 +202,7 @@ export function biggestMoverToGamma(m: BiggestMoverMarket, category: BreakingCat
     oneDayPriceChange: m.oneDayPriceChange ?? null,
     volume24hr: typeof vol === 'number' && Number.isFinite(vol) ? vol : null,
     tags: [{ label: category, slug: category }],
+    events: m.events ?? null,
   };
 }
 

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { fetchMarkets, type MarketListItem, type MarketsResponse } from '../api';
 import Colophon from '../components/Colophon';
 import Masthead from '../components/Masthead';
@@ -21,8 +20,15 @@ function MarketRow({ m }: { m: MarketListItem }) {
   return (
     <>
       <h3 className="story__title story__title--brief">
-        <Link to={`/markets/${encodeURIComponent(m.slug)}`}>{m.title}</Link>
+        <a href={m.url} target="_blank" rel="noreferrer">
+          {m.display_title}
+        </a>
       </h3>
+      {m.outcome_label && (
+        <p className="byline" style={{ marginTop: '0.15rem' }}>
+          Outcome: {m.outcome_label}
+        </p>
+      )}
       <div className="byline">
         <span className="numeric">{fmtMaskedPercent(m.yes_price)}</span>
         {delta != null && (

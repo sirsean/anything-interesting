@@ -6,7 +6,12 @@ type Props = {
 };
 
 export default function PolymarketCard({ poly }: Props) {
-  const url = `https://polymarket.com/event/${encodeURIComponent(poly.slug)}`;
+  const url = poly.url;
+  const headline =
+    poly.event_title && poly.event_slug && poly.event_slug !== poly.slug
+      ? poly.event_title
+      : (poly.title ?? poly.slug);
+  const outcome = poly.outcome_label;
   const now = poly.price_now;
   const prev = poly.price_24h_ago;
   const delta = now != null && prev != null ? (now - prev) * 100 : null;
@@ -16,9 +21,10 @@ export default function PolymarketCard({ poly }: Props) {
       <h3 className="card__title">Polymarket</h3>
       <p className="card__big">
         <a href={url} target="_blank" rel="noreferrer">
-          {poly.title ?? poly.slug}
+          {headline}
         </a>
       </p>
+      {outcome && <p className="byline">Outcome: {outcome}</p>}
       <div>
         <span className="card__price numeric">{fmtMaskedPercent(now)}</span>
         {delta != null && (

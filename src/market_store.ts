@@ -17,8 +17,9 @@ export async function upsertMarketRow(env: { DB: D1Database }, m: WatchMarket): 
     .prepare(
       `INSERT INTO markets (slug, title, description, category, end_date, vec_id,
           yes_token_id, yes_price, volume_24h, one_day_price_change,
+          event_slug, event_title, group_item_title,
           last_seen_in_watchlist, last_updated)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(slug) DO UPDATE SET
           title = excluded.title,
           description = excluded.description,
@@ -29,6 +30,9 @@ export async function upsertMarketRow(env: { DB: D1Database }, m: WatchMarket): 
           yes_price = COALESCE(excluded.yes_price, markets.yes_price),
           volume_24h = COALESCE(excluded.volume_24h, markets.volume_24h),
           one_day_price_change = COALESCE(excluded.one_day_price_change, markets.one_day_price_change),
+          event_slug = excluded.event_slug,
+          event_title = excluded.event_title,
+          group_item_title = excluded.group_item_title,
           last_seen_in_watchlist = excluded.last_seen_in_watchlist,
           last_updated = excluded.last_updated`,
     )
@@ -43,6 +47,9 @@ export async function upsertMarketRow(env: { DB: D1Database }, m: WatchMarket): 
       m.yesPrice,
       m.volume24h,
       m.oneDayPriceChange,
+      m.eventSlug,
+      m.eventTitle,
+      m.groupItemTitle,
       nowIso,
       nowIso,
     )

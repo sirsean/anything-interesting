@@ -54,7 +54,9 @@ export function fmtRelative(iso: string | null | undefined, now: Date = new Date
 
 export function fmtMaskedPercent(p: number | null | undefined): string {
   if (p == null) return '—';
-  return `${(p * 100).toFixed(0)}%`;
+  const pct = p * 100;
+  if (pct > 0 && pct < 1) return '<1%';
+  return `${pct.toFixed(0)}%`;
 }
 
 export function todayLong(now: Date = new Date()): string {

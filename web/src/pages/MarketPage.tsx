@@ -52,7 +52,10 @@ export default function MarketPage() {
       {m && (
         <>
           <header className="frontpage__section">
-            <h2 className="frontpage__section-title">{m.title}</h2>
+            <h2 className="frontpage__section-title">{m.display_title}</h2>
+            {m.outcome_label && (
+              <p className="byline">Outcome tracked: {m.outcome_label}</p>
+            )}
             <p className="byline">
               {m.category && <span>{m.category} · </span>}
               <a href={m.url} target="_blank" rel="noreferrer">

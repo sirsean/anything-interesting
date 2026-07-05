@@ -6,6 +6,7 @@ import { getChicagoHour, isDigestHour } from './chicago';
 import { handleDiscordInteraction } from './interactions';
 import { syncDigestReactions } from './reaction_sync';
 import { runMarketSnapshotsAndStrategyB } from './snapshots';
+import { prepareClusterEval, runClusterEval, runClusterEvalPreset } from './cluster_eval_harness';
 import { refreshWatchlistIfDue } from './watchlist';
 
 /** Same work as the hourly cron (`scheduled`). Used by `GET /__scheduled` on loopback in wrangler dev. */
@@ -89,6 +90,107 @@ export default {
     }
     if (req.method === 'GET' && url.pathname === '/health') {
       return Response.json({ ok: true, service: 'anything-interesting' });
+    }
+    if (req.method === 'POST' && url.pathname === '/ops/cluster-eval/prepare') {
+      const t = req.headers.get('X-Ops-Token');
+      if (!env.OPS_TOKEN || t !== env.OPS_TOKEN) {
+        return new Response('forbidden', { status: 403 });
+      }
+      let body: { hours?: number; limit?: number } = {};
+      try {
+        if (req.headers.get('content-type')?.includes('application/json')) {
+          body = (await req.json()) as typeof body;
+        }
+      } catch {
+        return Response.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 });
+      }
+      try {
+        const prepared = await prepareClusterEval(env, body);
+        return Response.json({ ok: true, ...prepared });
+      } catch (e) {
+        console.error('ops cluster-eval prepare failed', e);
+        return Response.json(
+          { ok: false, error: e instanceof Error ? e.message : String(e) },
+          { status: 500 },
+        );
+      }
+    }
+    if (req.method === 'POST' && url.pathname === '/ops/cluster-eval/run') {
+      const t = req.headers.get('X-Ops-Token');
+      if (!env.OPS_TOKEN || t !== env.OPS_TOKEN) {
+        return new Response('forbidden', { status: 403 });
+      }
+      let body: {
+        evalId?: string;
+        preset?: string;
+        kimiBudget?: number;
+        skipKimi?: boolean;
+        skipGlm?: boolean;
+      } = {};
+      try {
+        body = (await req.json()) as typeof body;
+      } catch {
+        return Response.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 });
+      }
+      if (!body.evalId || !body.preset) {
+        return Response.json({ ok: false, error: 'evalId and preset required' }, { status: 400 });
+      }
+      try {
+        const result = await runClusterEvalPreset(env, {
+          evalId: body.evalId,
+          preset: body.preset,
+          kimiBudget: body.kimiBudget,
+          skipKimi: body.skipKimi,
+          skipGlm: body.skipGlm,
+        });
+        return Response.json({ ok: true, ...result });
+      } catch (e) {
+        console.error('ops cluster-eval run failed', e);
+        return Response.json(
+          { ok: false, error: e instanceof Error ? e.message : String(e) },
+          { status: 500 },
+        );
+      }
+    }
+    if (req.method === 'POST' && url.pathname === '/ops/cluster-eval') {
+      const t = req.headers.get('X-Ops-Token');
+      if (!env.OPS_TOKEN || t !== env.OPS_TOKEN) {
+        return new Response('forbidden', { status: 403 });
+      }
+      let body: {
+        hours?: number;
+        limit?: number;
+        preset?: string;
+        presets?: string[];
+        kimiBudget?: number;
+        skipKimi?: boolean;
+        skipGlm?: boolean;
+      } = {};
+      try {
+        if (req.headers.get('content-type')?.includes('application/json')) {
+          body = (await req.json()) as typeof body;
+        }
+      } catch {
+        return Response.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 });
+      }
+      try {
+        const report = await runClusterEval(env, {
+          hours: body.hours,
+          limit: body.limit,
+          presetNames: body.presets,
+          preset: body.preset,
+          kimiBudget: body.kimiBudget,
+          skipKimi: body.skipKimi,
+          skipGlm: body.skipGlm,
+        });
+        return Response.json(report);
+      } catch (e) {
+        console.error('ops cluster-eval failed', e);
+        return Response.json(
+          { ok: false, error: e instanceof Error ? e.message : String(e) },
+          { status: 500 },
+        );
+      }
     }
     if (req.method === 'POST' && url.pathname === '/ops/refresh-watchlist') {
       const t = req.headers.get('X-Ops-Token');

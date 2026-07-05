@@ -92,13 +92,18 @@ export function polymarketField(
   };
 }
 
-export async function sourcesLine(db: D1Database, clusterId: number): Promise<string> {
-  const { results } = await db
-    .prepare(
-      `SELECT DISTINCT source FROM articles WHERE cluster_id = ? ORDER BY source ASC`,
-    )
-    .bind(clusterId)
-    .all<{ source: string }>();
+export async function sourcesLine(
+  db: D1Database,
+  clusterId: number,
+  isMarketDriven = false,
+): Promise<string> {
+  const sql = isMarketDriven
+    ? `SELECT DISTINCT a.source AS source
+       FROM market_cluster_articles mca
+       JOIN articles a ON a.id = mca.article_id
+       WHERE mca.cluster_id = ? ORDER BY a.source ASC`
+    : `SELECT DISTINCT source FROM articles WHERE cluster_id = ? ORDER BY source ASC`;
+  const { results } = await db.prepare(sql).bind(clusterId).all<{ source: string }>();
   const labels = (results ?? []).map((r) => r.source);
   return labels.join(', ') || '—';
 }
@@ -119,13 +124,18 @@ export type ClusterEmbedBuildInput = {
 export async function buildClusterDiscordEmbed(input: ClusterEmbedBuildInput): Promise<DiscordEmbed> {
   const { db, row: c, description, footerTag, titleLinkUrl } = input;
   const isMarketDriven = c.flow_type === 'market_driven';
-  const sources = await sourcesLine(db, c.id);
-  const top = await db
-    .prepare(
-      `SELECT url, title FROM articles WHERE cluster_id = ? ORDER BY fetched_at DESC LIMIT 1`,
-    )
-    .bind(c.id)
-    .first<{ url: string; title: string }>();
+  const sources = await sourcesLine(db, c.id, isMarketDriven);
+
+  // Market-driven clusters headline the MARKET QUESTION, never a matched article
+  // title — matched articles are only supporting citations and can be tangential.
+  const top = isMarketDriven
+    ? null
+    : await db
+        .prepare(
+          `SELECT url, title FROM articles WHERE cluster_id = ? ORDER BY fetched_at DESC LIMIT 1`,
+        )
+        .bind(c.id)
+        .first<{ url: string; title: string }>();
 
   const baseTitle = (top?.title ?? c.representative_title).slice(0, 240);
   const title = (isMarketDriven ? `📈 ${baseTitle}` : baseTitle).slice(0, 256);

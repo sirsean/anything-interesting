@@ -115,20 +115,35 @@ function isFlaggedMove(now: number, prev: number): boolean {
   return false;
 }
 
-/** Cheap deterministic keyword extraction for article search (no LLM). */
-function keywordsFromTitle(title: string): string[] {
+/**
+ * Distinctive keywords for article search. Aggressively drops stopwords, date
+ * tokens (month names, years), and generic market-boilerplate terms so a
+ * question like "US x Iran diplomatic meeting by July 10, 2026?" does not match
+ * every headline containing "july", "2026", or "meeting".
+ */
+export function keywordsFromTitle(title: string): string[] {
   const stop = new Set([
     'a','an','the','of','in','on','at','for','to','and','or','by','with','will','be',
     'is','are','was','were','do','does','vs','from','before','after','than','this',
-    'that','these','those','its','it','as','if','any','no','any','more','less','can',
-    'should','would','could','have','has','had','about','into','than','what','when',
-    'where','who','which','why','how','than','then','also','not','but','their',
+    'that','these','those','its','it','as','if','any','no','more','less','can',
+    'should','would','could','have','has','had','about','into','what','when',
+    'where','who','which','why','how','then','also','not','but','their',
+    // Date tokens — Polymarket questions almost always carry a resolution date.
+    'january','february','march','april','may','june','july','august','september',
+    'october','november','december',
+    '2024','2025','2026','2027','2028',
+    // Generic market / prediction boilerplate.
+    'president','presidential','election','win','wins','winner','next','out','over',
+    'under','above','below','reach','reaches','hit','hits','target','targets',
+    'successfully','announce','announces','announced','meeting','meet','deal',
+    'yes','2026','day','days','week','weeks','month','months','year','years',
+    'percent','price','market','odds','probability',
   ]);
   const words = title
     .toLowerCase()
     .replace(/[^a-z0-9 ]+/g, ' ')
     .split(/\s+/)
-    .filter((w) => w.length >= 4 && !stop.has(w));
+    .filter((w) => w.length >= 4 && !stop.has(w) && !/^\d+$/.test(w));
   return Array.from(new Set(words)).slice(0, 5);
 }
 
@@ -139,20 +154,91 @@ type ArticleHit = {
   source: string;
 };
 
-async function searchArticles(env: Env, keywords: string[]): Promise<ArticleHit[]> {
+/**
+ * Candidate articles whose titles overlap the market keywords. Uses an OR LIKE
+ * to gather candidates, then requires a minimum number of distinct keyword hits
+ * (≥2 when we have ≥2 keywords) so a single common word can't drag in unrelated
+ * headlines. Results are ranked by overlap strength.
+ */
+export async function searchArticles(env: Env, keywords: string[]): Promise<ArticleHit[]> {
   if (keywords.length === 0) return [];
-  const clauses = keywords.map(() => 'lower(title) LIKE ?').join(' OR ');
-  const params = keywords.map((k) => `%${k.toLowerCase()}%`);
+  const lowered = keywords.map((k) => k.toLowerCase());
+  const clauses = lowered.map(() => 'lower(title) LIKE ?').join(' OR ');
+  const params = lowered.map((k) => `%${k}%`);
   const { results } = await env.DB
     .prepare(
       `SELECT id, title, url, source FROM articles
        WHERE datetime(fetched_at) >= datetime('now', '-24 hours')
          AND (${clauses})
-       ORDER BY fetched_at DESC LIMIT 6`,
+       ORDER BY fetched_at DESC LIMIT 40`,
     )
     .bind(...params)
     .all<ArticleHit>();
-  return results ?? [];
+
+  const minHits = lowered.length >= 2 ? 2 : 1;
+  const scored = (results ?? [])
+    .map((a) => {
+      const t = a.title.toLowerCase();
+      const overlap = lowered.filter((k) => t.includes(k)).length;
+      return { a, overlap };
+    })
+    .filter((x) => x.overlap >= minHits)
+    .sort((x, y) => y.overlap - x.overlap)
+    .slice(0, 6)
+    .map((x) => x.a);
+  return scored;
+}
+
+/**
+ * Ask Kimi which candidate articles genuinely relate to the market question.
+ * Returns the filtered subset (keyword overlap alone is too noisy). On error or
+ * empty response, returns an empty list — we prefer "no articles" over wrong ones.
+ */
+export async function filterRelevantArticles(
+  env: Env,
+  marketTitle: string,
+  hits: ArticleHit[],
+): Promise<ArticleHit[]> {
+  if (hits.length === 0) return [];
+  const list = hits.map((h, i) => `${i + 1}. ${h.title.slice(0, 240)}`).join('\n');
+  let raw: unknown;
+  try {
+    raw = await runLLM(
+      env,
+      'market_explain',
+      MODEL_KIMI_JUDGE,
+      [
+        {
+          role: 'system',
+          content:
+            'You match news articles to a Polymarket question. Return ONLY articles that are directly about the same event/subject as the question (not merely sharing a keyword). Reply JSON only: {"relevant":[<1-based indices>]}. If none are relevant, reply {"relevant":[]}.',
+        },
+        {
+          role: 'user',
+          content: `Polymarket question: ${marketTitle}\n\nCandidate articles:\n${list}`,
+        },
+      ],
+      { max_tokens: 120, temperature: 0, response_format: { type: 'json_object' } },
+    );
+  } catch (e) {
+    console.error('Kimi article relevance filter failed', e);
+    return [];
+  }
+  const txt = textFromChatOut(raw);
+  const m = txt.match(/\{[\s\S]*\}/);
+  if (!m) return [];
+  try {
+    const j = JSON.parse(m[0]) as { relevant?: number[] };
+    const idx = Array.isArray(j.relevant) ? j.relevant : [];
+    const picked: ArticleHit[] = [];
+    for (const n of idx) {
+      const h = hits[n - 1];
+      if (h) picked.push(h);
+    }
+    return picked;
+  } catch {
+    return [];
+  }
 }
 
 async function kimiExplain(
@@ -315,10 +401,19 @@ async function upsertMarketDrivenCluster(
     clusterId = ins.id;
   }
 
+  // Cite supporting articles WITHOUT moving them out of their real news
+  // clusters. Refresh the reference set on each update so stale hits drop off.
+  await env.DB
+    .prepare(`DELETE FROM market_cluster_articles WHERE cluster_id = ?`)
+    .bind(clusterId)
+    .run();
   for (const h of hits) {
     await env.DB
-      .prepare(`UPDATE articles SET cluster_id = ? WHERE id = ? AND cluster_id <> ?`)
-      .bind(clusterId, h.id, clusterId)
+      .prepare(
+        `INSERT OR IGNORE INTO market_cluster_articles (cluster_id, article_id)
+         VALUES (?, ?)`,
+      )
+      .bind(clusterId, h.id)
       .run();
   }
 }
@@ -382,7 +477,8 @@ export async function runMarketSnapshotsAndStrategyB(env: Env): Promise<{
     }
 
     const keywords = keywordsFromTitle(input.title);
-    const hits = await searchArticles(env, keywords);
+    const candidates = await searchArticles(env, keywords);
+    const hits = await filterRelevantArticles(env, input.title, candidates);
     kimiCalls += 1;
     const explanation = await kimiExplain(env, input, prev, input.yesPrice, hits);
     if (!explanation.summary) continue;

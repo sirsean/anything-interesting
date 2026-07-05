@@ -1,15 +1,28 @@
 import type { Env } from './env';
+import {
+  PROD_CLUSTER_CONFIG,
+  resolveClusterPick,
+  type ClusterConfig,
+  type ClusterPick,
+  type RerankFn,
+  type TopMatch,
+} from './cluster_sim';
 import { MODEL_GLM_FLASH, runEmbed, runLLM, textFromChatOut } from './llm';
 
-const COSINE_SAME = 0.82;
-const COSINE_LOW = 0.78;
 const VECTOR_TOPK = 20;
-const CORPUS_DAYS = 7;
 
-export type ClusterPick = { clusterId: number } | { newCluster: true };
+export type { ClusterPick, ClusterConfig };
+export { PROD_CLUSTER_CONFIG };
 
-function tsCutoff(): number {
-  return Math.floor(Date.now() / 1000) - CORPUS_DAYS * 86400;
+function tsCutoff(corpusDays: number): number {
+  return Math.floor(Date.now() / 1000) - corpusDays * 86400;
+}
+
+function metaTs(m: VectorizeMatch): number {
+  const ts = m.metadata?.ts;
+  if (typeof ts === 'number') return ts;
+  if (typeof ts === 'string') return parseFloat(ts) || 0;
+  return 0;
 }
 
 async function glmSameStory(env: Env, a: string, b: string): Promise<boolean> {
@@ -41,71 +54,72 @@ async function glmSameStory(env: Env, a: string, b: string): Promise<boolean> {
   }
 }
 
-/**
- * Vectorize + cosine thresholds; GLM rerank in the 0.78–0.82 band.
- * Match metadata must include `cluster_id` (number) and optional `rep_title`.
- */
-function metaTs(m: VectorizeMatch): number {
-  const ts = m.metadata?.ts;
-  if (typeof ts === 'number') return ts;
-  if (typeof ts === 'string') return parseFloat(ts) || 0;
-  return 0;
+export function makeGlmRerankFn(env: Env): RerankFn {
+  return (a, b) => glmSameStory(env, a, b);
 }
 
+/**
+ * Vectorize + cosine thresholds; GLM rerank in the gray band (configurable).
+ * Match metadata must include `cluster_id` (number) and optional `rep_title`.
+ */
 export async function pickClusterForHeadline(
   env: Env,
   embedding: number[],
   newTitle: string,
   db: D1Database,
+  config: ClusterConfig = PROD_CLUSTER_CONFIG,
+  rerank: RerankFn = makeGlmRerankFn(env),
 ): Promise<ClusterPick> {
-  const cutoff = tsCutoff();
+  const cutoff = tsCutoff(config.corpusDays);
   const matches = await env.HEADLINES.query(embedding, {
     topK: VECTOR_TOPK,
     returnMetadata: true,
   });
 
-  const recent = matches.matches.filter((m) => metaTs(m) >= cutoff);
-  const top = recent[0];
-  if (!top || typeof top.score !== 'number') {
+  const recent = (matches.matches ?? []).filter((m) => metaTs(m) >= cutoff);
+  const topRaw = recent[0];
+  if (!topRaw || typeof topRaw.score !== 'number') {
     return { newCluster: true };
   }
 
-  const score = top.score;
-  if (score < COSINE_LOW) {
-    return { newCluster: true };
-  }
+  const cid = topRaw.metadata?.cluster_id;
+  const clusterId =
+    typeof cid === 'number' ? cid : typeof cid === 'string' ? parseInt(cid, 10) : NaN;
+  const repMeta = topRaw.metadata?.rep_title;
+  const repFromMeta = typeof repMeta === 'string' ? repMeta : '';
 
-  const cid = top.metadata?.cluster_id;
-  const clusterId = typeof cid === 'number' ? cid : typeof cid === 'string' ? parseInt(cid, 10) : NaN;
-  if (!Number.isFinite(clusterId)) {
-    return { newCluster: true };
-  }
+  const top: TopMatch = {
+    score: topRaw.score,
+    clusterId,
+    repTitle: repFromMeta,
+  };
 
-  // Vectorize can still reference a cluster removed from D1 (e.g. after a local DB reset).
-  const clusterRow = await db
-    .prepare('SELECT 1 AS x FROM clusters WHERE id = ?')
-    .bind(clusterId)
-    .first<{ x: number }>();
-  if (!clusterRow) {
-    return { newCluster: true };
-  }
+  const clusterExists = async (id: number): Promise<boolean> => {
+    const row = await db
+      .prepare('SELECT 1 AS x FROM clusters WHERE id = ?')
+      .bind(id)
+      .first<{ x: number }>();
+    return row != null;
+  };
 
-  if (score > COSINE_SAME) {
-    return { clusterId };
-  }
-
-  const repMeta = top.metadata?.rep_title;
-  let rep = typeof repMeta === 'string' ? repMeta : '';
-  if (!rep) {
+  const resolveRep = async (id: number, fallback: string): Promise<string> => {
+    if (fallback) return fallback;
     const row = await db
       .prepare(`SELECT representative_title FROM clusters WHERE id = ?`)
-      .bind(clusterId)
+      .bind(id)
       .first<{ representative_title: string }>();
-    rep = row?.representative_title ?? '';
-  }
+    return row?.representative_title ?? '';
+  };
 
-  const same = await glmSameStory(env, newTitle, rep || newTitle);
-  return same ? { clusterId } : { newCluster: true };
+  const { pick } = await resolveClusterPick({
+    top,
+    newTitle,
+    config,
+    rerank,
+    clusterExists,
+    resolveRep,
+  });
+  return pick;
 }
 
 export async function embedHeadline(env: Env, title: string): Promise<number[]> {

@@ -437,15 +437,24 @@ async function handleClusterDetail(env: Env, id: number, now: Date): Promise<Res
     return errorResponse(404, 'Cluster not found');
   }
 
+  const isMarketDriven = row.flow_type === 'market_driven';
+  // Market-driven clusters cite supporting articles via a reference table (they
+  // no longer steal articles into their own cluster_id).
+  const articleSql = isMarketDriven
+    ? `SELECT a.id, a.title, a.url, a.source, a.fetched_at, a.published_at
+       FROM market_cluster_articles mca
+       JOIN articles a ON a.id = mca.article_id
+       WHERE mca.cluster_id = ?
+       ORDER BY a.fetched_at DESC, a.id DESC`
+    : `SELECT id, title, url, source, fetched_at, published_at
+       FROM articles
+       WHERE cluster_id = ?
+       ORDER BY fetched_at DESC, id DESC`;
+
   const [items, articleRows] = await Promise.all([
     shapeClustersBatch(env.DB, [row], now),
     env.DB
-      .prepare(
-        `SELECT id, title, url, source, fetched_at, published_at
-         FROM articles
-         WHERE cluster_id = ?
-         ORDER BY fetched_at DESC, id DESC`,
-      )
+      .prepare(articleSql)
       .bind(id)
       .all<{
         id: number;

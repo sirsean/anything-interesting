@@ -146,12 +146,16 @@ export async function deliverDigest(env: Env, hourCT: string): Promise<void> {
   for (let i = 0; i < clusters.length; i++) {
     const c = clusters[i];
     const isMarketDriven = c.flow_type === 'market_driven';
-    const top = await env.DB
-      .prepare(
-        `SELECT url, title FROM articles WHERE cluster_id = ? ORDER BY fetched_at DESC LIMIT 1`,
-      )
-      .bind(c.id)
-      .first<{ url: string; title: string }>();
+    // Market-driven clusters headline the market question; only news-driven
+    // clusters take their headline/link from an attached article.
+    const top = isMarketDriven
+      ? null
+      : await env.DB
+          .prepare(
+            `SELECT url, title FROM articles WHERE cluster_id = ? ORDER BY fetched_at DESC LIMIT 1`,
+          )
+          .bind(c.id)
+          .first<{ url: string; title: string }>();
 
     const baseTitle = (top?.title ?? c.representative_title).slice(0, 240);
     const title = (isMarketDriven ? `📈 ${baseTitle}` : baseTitle).slice(0, 256);

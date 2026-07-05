@@ -91,6 +91,34 @@ describe('discord_cluster_embed', () => {
     expect(embed.fields.map((x) => x.name)).toEqual(['Topic', 'Sources']);
   });
 
+  it('market-driven embeds headline the market question, not a matched article', async () => {
+    // A market-driven cluster must NOT query articles by cluster_id for its title;
+    // it uses representative_title (the market question) prefixed with 📈.
+    const db = {
+      prepare: vi.fn().mockImplementation((sql: string) => ({
+        bind: vi.fn().mockReturnValue({
+          all: vi.fn().mockResolvedValue({ results: [{ source: 'BBC' }] }),
+          first: vi.fn().mockResolvedValue(
+            sql.includes('FROM markets') ? null : { url: 'https://x/y', title: 'France vs Paraguay' },
+          ),
+        }),
+      })),
+    } as unknown as D1Database;
+
+    const embed = await buildClusterDiscordEmbed({
+      db,
+      row: cluster({
+        id: 5,
+        flow_type: 'market_driven',
+        representative_title: 'US x Iran diplomatic meeting by July 10, 2026?',
+        polymarket_slug: 'us-x-iran-diplomatic-meeting',
+      }),
+      description: 'Body',
+    });
+    expect(embed.title).toBe('📈 US x Iran diplomatic meeting by July 10, 2026?');
+    expect(embed.title).not.toContain('France');
+  });
+
   it('marketDrivenDescription uses JSON summary when valid', () => {
     const c = cluster({
       id: 1,

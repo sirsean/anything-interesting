@@ -9,7 +9,7 @@ import { polymarketEventUrl } from './polymarket';
 import { EXCEPTIONAL_SCORE, MIN_FINAL_SCORE, MIN_WEIGHTED_SOURCE_COVERAGE } from './digest_constants';
 import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
 import type { Env } from './env';
-import { MODEL_GLM_FLASH, runLLM, textFromChatOut } from './llm';
+import { MODEL_GLM_FLASH, runLLM, textFromChatContentOnly } from './llm';
 
 export type DigestCandidateRow = ClusterRowForEmbed & { source_weight_sum: number };
 
@@ -35,9 +35,9 @@ async function summarizeForDiscord(
           content: `Latest headline: ${title.slice(0, 400)}\nURL: ${url.slice(0, 200)}\nCluster line: ${rep.slice(0, 400)}`,
         },
       ],
-      { max_tokens: 180, temperature: 0.35 },
+      { max_tokens: 300, temperature: 0.35 },
     );
-    const t = textFromChatOut(raw).trim();
+    const t = textFromChatContentOnly(raw);
     if (t.length > 0) return t.slice(0, 4090);
   } catch (e) {
     console.error('digest summary GLM failed', e);

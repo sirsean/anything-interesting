@@ -36,6 +36,17 @@ export function isKimiModel(model: string): boolean {
   return m.includes('moonshotai/kimi') || m.includes('kimi-k2');
 }
 
+/** GLM-4.7-Flash defaults to extended thinking; `content` is often null and prose lands in `reasoning`. */
+export function isGlmModel(model: string): boolean {
+  return model.toLowerCase().includes('glm');
+}
+
+function chatTemplateKwargsForModel(model: string): Record<string, unknown> | undefined {
+  if (isKimiModel(model)) return { thinking: false };
+  if (isGlmModel(model)) return { thinking: { type: 'disabled' } };
+  return undefined;
+}
+
 /**
  * Single entry for Workers AI text/chat models (GLM, Kimi, …).
  * All chat completions should go through here so gateway + tags stay consistent.
@@ -48,12 +59,13 @@ export async function runLLM(
   extra?: { max_tokens?: number; temperature?: number; response_format?: { type: 'json_object' } },
 ): Promise<unknown> {
   const opts = gatewayOpts(env, task);
+  const templateKwargs = chatTemplateKwargsForModel(model);
   const body = {
     messages,
     max_tokens: extra?.max_tokens ?? 512,
     temperature: extra?.temperature ?? 0.2,
     ...(extra?.response_format ? { response_format: extra.response_format } : {}),
-    ...(isKimiModel(model) ? { chat_template_kwargs: { thinking: false } } : {}),
+    ...(templateKwargs ? { chat_template_kwargs: templateKwargs } : {}),
   };
   return (env.AI as Ai).run(model as keyof AiModels, body, opts as AiOptions);
 }
@@ -92,4 +104,12 @@ export function textFromChatOut(raw: unknown): string {
     return msg.reasoning_content;
   }
   return '';
+}
+
+/** User-facing prose — never surface chain-of-thought from `reasoning` fields. */
+export function textFromChatContentOnly(raw: unknown): string {
+  if (raw == null || typeof raw !== 'object') return '';
+  const o = raw as { choices?: Array<{ message?: ChatMessageOut | null }> };
+  const content = o.choices?.[0]?.message?.content;
+  return typeof content === 'string' ? content.trim() : '';
 }

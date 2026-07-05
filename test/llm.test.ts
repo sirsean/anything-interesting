@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isKimiModel, textFromChatOut } from '../src/llm';
+import { isGlmModel, isKimiModel, textFromChatContentOnly, textFromChatOut } from '../src/llm';
 
 describe('llm', () => {
   describe('isKimiModel', () => {
@@ -10,6 +10,16 @@ describe('llm', () => {
 
     it('rejects non-Kimi models', () => {
       expect(isKimiModel('@cf/zai-org/glm-4.7-flash')).toBe(false);
+    });
+  });
+
+  describe('isGlmModel', () => {
+    it('recognizes GLM slugs', () => {
+      expect(isGlmModel('@cf/zai-org/glm-4.7-flash')).toBe(true);
+    });
+
+    it('rejects non-GLM models', () => {
+      expect(isGlmModel('@cf/moonshotai/kimi-k2.6')).toBe(false);
     });
   });
 
@@ -72,6 +82,31 @@ describe('llm', () => {
       expect(textFromChatOut({})).toBe('');
       expect(textFromChatOut({ choices: [] })).toBe('');
       expect(textFromChatOut({ choices: [{ message: {} }] })).toBe('');
+    });
+  });
+
+  describe('textFromChatContentOnly', () => {
+    it('returns content and ignores reasoning fields', () => {
+      expect(
+        textFromChatContentOnly({
+          choices: [
+            {
+              message: {
+                content: '  Wire summary here.  ',
+                reasoning: 'Analyze the Request: ...',
+              },
+            },
+          ],
+        }),
+      ).toBe('Wire summary here.');
+    });
+
+    it('returns empty when content is null even if reasoning is present', () => {
+      expect(
+        textFromChatContentOnly({
+          choices: [{ message: { content: null, reasoning: 'chain of thought' } }],
+        }),
+      ).toBe('');
     });
   });
 });

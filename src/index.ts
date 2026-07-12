@@ -1,4 +1,5 @@
 import { handleApiRequest } from './api';
+import { handleClusterSpaPage } from './cluster_spa_meta';
 import { deliverDigest } from './digest';
 import { runIngest } from './ingest';
 import type { Env } from './env';
@@ -230,6 +231,10 @@ export default {
         status: 405,
         headers: { 'content-type': 'application/json; charset=utf-8' },
       });
+    }
+    const clusterSpaMatch = url.pathname.match(/^\/cluster\/([^/]+)$/);
+    if (req.method === 'GET' && clusterSpaMatch) {
+      return handleClusterSpaPage(req, env, clusterSpaMatch[1]);
     }
     return new Response('Not found', { status: 404 });
   },

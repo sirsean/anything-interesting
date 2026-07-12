@@ -17,6 +17,15 @@ describe('Worker fetch handler', () => {
     expect(j.service).toBe('anything-interesting');
   });
 
+  it('GET /cluster/:id requires ASSETS binding', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.test/cluster/1'),
+      stubEnv,
+      {} as ExecutionContext,
+    );
+    expect(res.status).toBe(500);
+  });
+
   it('returns 404 for unknown paths', async () => {
     const res = await worker.fetch(
       new Request('https://example.test/unknown'),

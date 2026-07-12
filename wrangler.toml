@@ -9,8 +9,9 @@ compatibility_date = "2026-05-01"
 # client-side routes; `run_worker_first` keeps `/api/*` (and `/health`,
 # `/interactions`) flowing through the Worker without an asset lookup.
 [assets]
+binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/health", "/interactions", "/__scheduled", "/ops/*"]
+run_worker_first = ["/api/*", "/health", "/interactions", "/__scheduled", "/ops/*", "/cluster/*"]
 
 [triggers]
 crons = ["0 * * * *"]

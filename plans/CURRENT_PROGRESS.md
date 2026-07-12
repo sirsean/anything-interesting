@@ -113,6 +113,6 @@ Feeds in `src/sources.ts` (`M1_FEEDS`): **The Guardian** World, **BBC** World, *
 
 **2026-07-03:** **Kimi K2.6 fix:** `runLLM` now passes `chat_template_kwargs: { thinking: false }` for Kimi models (K2.6 defaults to thinking mode, which left `message.content` empty and pinned every judgment at the 0.45 parse fallback). `textFromChatOut` also reads `reasoning` / `reasoning_content` when `content` is empty. Strategy A Polymarket matching now runs on **every** news cluster (not only ≥3 weighted sources); vector similarity ≥ 0.70 satisfies the candidacy gate per `INITIAL.md`. **Next:** deploy, spot-check `llm_reasoning_log` for non-empty reasons + varied scores; re-evaluate clustering thresholds and surprise in `final_score` once Kimi is confirmed in prod.
 
-_Last updated: 2026-07-03 — Kimi K2.6 thinking-mode fix + per-cluster Polymarket match. Prior note: 2026-05-11 `M1_FEEDS` / M6 deploy smoke._
+_Last updated: 2026-07-12 — cluster link previews inject per-story Open Graph / Twitter meta via Worker (`/cluster/*` in `run_worker_first`). Prior note: 2026-07-03 Kimi K2.6 thinking-mode fix._
 
 **2026-05-11 (digest → UI):** Scheduled Discord digest embed titles link to `PUBLIC_SITE_URL/cluster/:id` when `PUBLIC_SITE_URL` is set (`wrangler.toml` / dashboard); unset preserves the previous top-article (or Polymarket) title URL. `/topnews` unchanged.

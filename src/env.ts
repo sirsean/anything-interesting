@@ -3,6 +3,8 @@
  * through AI Gateway when set (dashboard / `wrangler vars put`).
  */
 export type Env = {
+  /** Static SPA assets (`wrangler.toml` `[assets] binding = "ASSETS"`). */
+  ASSETS?: Fetcher;
   DB: D1Database;
   CONFIG: KVNamespace;
   HEADLINES: Vectorize;

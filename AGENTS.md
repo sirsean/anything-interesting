@@ -22,3 +22,12 @@ Slash command registration uses the **bot token** once via HTTP; it is **not** s
 2. From the repo root: `npm run discord:register-topnews`  
    The script loads `.env` via **dotenv** (`import 'dotenv/config'` in `scripts/register-topnews.mjs`). Existing shell env vars take precedence over `.env` if both are set.
 3. Never commit `.env` or paste bot tokens into the repo, issues, or chat logs.
+
+## Brave Search — Strategy B market research
+
+Flagged Polymarket moves always run Brave News + page-fetch research (in addition to local RSS). Store the API key as a Worker secret (not in git):
+
+1. Create a key at https://api-dashboard.search.brave.com/ (Search plan includes News).
+2. Production: `wrangler secret put BRAVE_SEARCH_API_KEY`
+3. Local: put `BRAVE_SEARCH_API_KEY=...` in **`.dev.vars`** (Wrangler / Vite CF plugin; gitignored). `.env` alone does not inject Worker secrets.
+4. If unset, Strategy B still runs on RSS hits only (research skipped).

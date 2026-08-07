@@ -97,6 +97,14 @@ describe('parseLlmReasoning', () => {
     ).toEqual({ score: 0.71, reason: 'because', at: '2026-05-10T00:00:00Z' });
   });
 
+  it('falls back to summary when reason is missing', () => {
+    expect(parseLlmReasoning(JSON.stringify({ summary: 'Market move', score: 0.4 }))).toEqual({
+      score: 0.4,
+      reason: 'Market move',
+      at: null,
+    });
+  });
+
   it('tolerates missing fields', () => {
     expect(parseLlmReasoning(JSON.stringify({ reason: 'only' }))).toEqual({
       score: null,

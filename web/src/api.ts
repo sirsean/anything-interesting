@@ -37,6 +37,14 @@ export type ClusterLlmReasoning = {
   at: string | null;
 };
 
+export type ClusterResearchSource = {
+  title: string;
+  url: string;
+  source: string | null;
+  age: string | null;
+  fetched: boolean;
+};
+
 export type ClusterItem = {
   id: number;
   representative_title: string;
@@ -51,6 +59,7 @@ export type ClusterItem = {
   polymarket: ClusterPolymarket | null;
   digest: ClusterDigestStatus;
   llm_reasoning: ClusterLlmReasoning | null;
+  research: ClusterResearchSource[];
   first_seen: string;
   last_updated: string;
 };

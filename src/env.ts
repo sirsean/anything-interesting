@@ -28,4 +28,9 @@ export type Env = {
   PUBLIC_SITE_URL?: string;
   /** `wrangler secret put OPS_TOKEN` — required for `POST /ops/refresh-watchlist`. */
   OPS_TOKEN?: string;
+  /**
+   * Brave Search API subscription token for Strategy B market research
+   * (`wrangler secret put BRAVE_SEARCH_API_KEY`). Optional — research is skipped when unset.
+   */
+  BRAVE_SEARCH_API_KEY?: string;
 };

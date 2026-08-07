@@ -110,11 +110,14 @@ The Vite plugin emits `dist/anything_interesting/wrangler.json` with the asset d
 | `DISCORD_WEBHOOK_URL` | Scheduled digest posts |
 | `DISCORD_PUBLIC_KEY` | Verify Discord interaction signatures (`POST /interactions`) |
 | `DISCORD_BOT_TOKEN` | Poll 👍/👎 on digest messages to update source weights (optional but recommended for M5) |
+| `OPS_TOKEN` | Auth for `POST /ops/*` operator routes |
+| `BRAVE_SEARCH_API_KEY` | Strategy B market research (Brave News + page-fetch); optional — research skipped if unset |
 
 ```bash
 npx wrangler secret put DISCORD_WEBHOOK_URL
 npx wrangler secret put DISCORD_PUBLIC_KEY
 npx wrangler secret put DISCORD_BOT_TOKEN
+npx wrangler secret put BRAVE_SEARCH_API_KEY
 ```
 
 The **bot token is not stored in the Worker** for slash-command registration — that runs once from your machine (below).

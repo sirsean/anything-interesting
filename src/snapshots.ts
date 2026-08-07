@@ -5,14 +5,20 @@
  *   write a `market_snapshots` row, then prune anything older than 14 days.
  * - Compare new price to the closest snapshot from ~24h ago. Flag movers
  *   beyond `>4% absolute` or `>25% relative` (per `INITIAL.md`).
- * - For each flagged market, do a keyword search over the last 24h of
- *   articles, ask Kimi to write a "what likely happened" explainer, and
- *   create / update a `flow_type='market_driven'` cluster with the explainer
- *   as the representative summary and an attached article (if any).
+ * - For each flagged market: keyword-search local RSS (24h), Brave News +
+ *   page-fetch research (always), ask Kimi for a grounded explainer, and
+ *   create / update a `flow_type='market_driven'` cluster. Research URLs are
+ *   persisted in `llm_reasoning_log` for the API/UI.
  */
 import type { Env } from './env';
 import { patchMarketQuotes } from './market_store';
 import { MODEL_KIMI_JUDGE, runLLM, textFromChatOut } from './llm';
+import {
+  formatResearchForPrompt,
+  researchMarketMove,
+  researchSourcesForLog,
+  type MarketResearchResult,
+} from './market_research';
 import { fetchMarketBySlug, normalizeMarket, type WatchMarket } from './polymarket';
 import { inferTopicFromTitle, topicalWeight } from './topic';
 import { loadWatchlistSlugs } from './watchlist';
@@ -247,6 +253,7 @@ async function kimiExplain(
   prev: number,
   now: number,
   hits: ArticleHit[],
+  research: MarketResearchResult,
 ): Promise<{ summary: string; score: number }> {
   const direction = now > prev ? 'up' : 'down';
   const move = `${(prev * 100).toFixed(0)}% → ${(now * 100).toFixed(0)}%`;
@@ -254,13 +261,17 @@ async function kimiExplain(
     .slice(0, 4)
     .map((h) => `- ${h.source}: ${h.title.slice(0, 240)}`)
     .join('\n');
+  const researchBlock = formatResearchForPrompt(research.sources);
   const userBody =
     `Polymarket question: ${market.title}\n` +
     `Category: ${market.category || '(none)'}\n` +
     `YES probability moved ${direction}: ${move}\n` +
     (articleLines
-      ? `Recent matching articles (24h):\n${articleLines}`
-      : 'No matching articles found in the last 24h.');
+      ? `Recent matching RSS articles (24h):\n${articleLines}\n`
+      : 'No matching RSS articles found in the last 24h.\n') +
+    (researchBlock
+      ? `\nExternal news research (Brave News${research.query ? `; query: ${research.query}` : ''}):\n${researchBlock}`
+      : '\nNo external news research results.');
 
   let raw: unknown;
   try {
@@ -272,11 +283,11 @@ async function kimiExplain(
         {
           role: 'system',
           content:
-            'You explain a notable Polymarket price move for a precision-first news digest. Reply JSON only: {"summary":"1-2 sentences, neutral wire tone","score":0.0-1.0 newsworthiness}. If there is no clear news catalyst, say so plainly and lower the score.',
+            'You explain a notable Polymarket price move for a precision-first news digest. Reply JSON only: {"summary":"1-2 sentences, neutral wire tone","score":0.0-1.0 newsworthiness}. Ground the summary in the provided RSS and/or external research evidence. Prefer concrete reported facts over speculation. Do not invent catalysts. Do not attribute the move to vague "market positioning," "sentiment shifts," or "traders repositioning" — if evidence is thin, say reporting does not yet identify a clear public catalyst and lower the score, without elaborating on trader psychology.',
         },
         { role: 'user', content: userBody },
       ],
-      { max_tokens: 240, temperature: 0.3, response_format: { type: 'json_object' } },
+      { max_tokens: 280, temperature: 0.3, response_format: { type: 'json_object' } },
     );
   } catch (e) {
     console.error('Kimi market explain failed', market.slug, e);
@@ -302,6 +313,7 @@ async function upsertMarketDrivenCluster(
   now: number,
   hits: ArticleHit[],
   explanation: { summary: string; score: number },
+  research: MarketResearchResult,
 ): Promise<void> {
   const surpriseAbs = Math.abs(now - prev);
   let surprise = Math.min(1, surpriseAbs / 0.15);
@@ -311,7 +323,8 @@ async function upsertMarketDrivenCluster(
   const topic = inferTopicFromTitle(market.title);
   const tw = topicalWeight(topic);
   const llm = explanation.score;
-  const coverage = Math.min(1, hits.length / 3);
+  // Coverage can come from local RSS hits or external research sources.
+  const coverage = Math.min(1, Math.max(hits.length, research.sources.length) / 3);
   const novelty = 1;
   const inner = 0.1 * coverage + 0.15 * novelty + 0.3 * surprise + 0.45 * llm;
   const final = Math.min(1, inner * tw);
@@ -319,10 +332,14 @@ async function upsertMarketDrivenCluster(
   const repTitle = market.title.slice(0, 500);
   const log = JSON.stringify({
     summary: explanation.summary,
+    // `reason` alias so API/UI parsers that expect judgment-shaped logs still work.
+    reason: explanation.summary,
     score: explanation.score,
     move: { prev, now },
     at: new Date().toISOString(),
     hits: hits.length,
+    research_query: research.query || null,
+    research: researchSourcesForLog(research.sources),
   }).slice(0, 4000);
 
   const existing = await env.DB
@@ -480,10 +497,34 @@ export async function runMarketSnapshotsAndStrategyB(env: Env): Promise<{
     const candidates = await searchArticles(env, keywords);
     const hits = await filterRelevantArticles(env, input.title, candidates);
     kimiCalls += 1;
-    const explanation = await kimiExplain(env, input, prev, input.yesPrice, hits);
+
+    // Always research flagged moves (even when RSS hits exist).
+    let research: MarketResearchResult = { query: '', sources: [] };
+    try {
+      research = await researchMarketMove(env.BRAVE_SEARCH_API_KEY, input.title);
+    } catch (e) {
+      console.error('market research failed', slug, e);
+    }
+
+    const explanation = await kimiExplain(
+      env,
+      input,
+      prev,
+      input.yesPrice,
+      hits,
+      research,
+    );
     if (!explanation.summary) continue;
     try {
-      await upsertMarketDrivenCluster(env, input, prev, input.yesPrice, hits, explanation);
+      await upsertMarketDrivenCluster(
+        env,
+        input,
+        prev,
+        input.yesPrice,
+        hits,
+        explanation,
+        research,
+      );
       marketDriven += 1;
     } catch (e) {
       console.error('market-driven cluster upsert failed', slug, e);

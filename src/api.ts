@@ -205,16 +205,65 @@ async function fetchMarketMeta(
   return out;
 }
 
-export type LlmReasoning = { score: number | null; reason: string; at: string | null };
+export type ResearchSourceApi = {
+  title: string;
+  url: string;
+  source: string | null;
+  age: string | null;
+  fetched: boolean;
+};
+
+export type LlmReasoning = {
+  score: number | null;
+  reason: string;
+  at: string | null;
+};
+
+export function parseResearchSources(raw: string | null): ResearchSourceApi[] {
+  if (!raw) return [];
+  try {
+    const j = JSON.parse(raw) as { research?: unknown };
+    if (!Array.isArray(j.research)) return [];
+    const out: ResearchSourceApi[] = [];
+    for (const item of j.research) {
+      if (!item || typeof item !== 'object') continue;
+      const r = item as Record<string, unknown>;
+      const title = typeof r.title === 'string' ? r.title.trim() : '';
+      const url = typeof r.url === 'string' ? r.url.trim() : '';
+      if (!title || !url) continue;
+      out.push({
+        title: title.slice(0, 500),
+        url,
+        source: typeof r.source === 'string' ? r.source : null,
+        age: typeof r.age === 'string' ? r.age : null,
+        fetched: r.fetched === true,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
 
 export function parseLlmReasoning(raw: string | null): LlmReasoning | null {
   if (!raw) return null;
   try {
-    const j = JSON.parse(raw) as { score?: number; reason?: string; at?: string };
-    if (typeof j.reason !== 'string' && typeof j.score !== 'number') return null;
+    const j = JSON.parse(raw) as {
+      score?: number;
+      reason?: string;
+      summary?: string;
+      at?: string;
+    };
+    const reason =
+      typeof j.reason === 'string' && j.reason.trim()
+        ? j.reason
+        : typeof j.summary === 'string'
+          ? j.summary
+          : '';
+    if (!reason && typeof j.score !== 'number') return null;
     return {
       score: typeof j.score === 'number' ? j.score : null,
-      reason: typeof j.reason === 'string' ? j.reason : '',
+      reason,
       at: typeof j.at === 'string' ? j.at : null,
     };
   } catch {
@@ -256,6 +305,8 @@ export type ClusterApiItem = {
     status_label: string;
   };
   llm_reasoning: LlmReasoning | null;
+  /** Brave News research sources from Strategy B (market-driven); empty when none. */
+  research: ResearchSourceApi[];
   first_seen: string;
   last_updated: string;
 };
@@ -331,6 +382,7 @@ function shapeClusterItem(
       status_label,
     },
     llm_reasoning: parseLlmReasoning(row.llm_reasoning_log),
+    research: parseResearchSources(row.llm_reasoning_log),
     first_seen: row.first_seen,
     last_updated: row.last_updated,
   };

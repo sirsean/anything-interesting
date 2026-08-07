@@ -97,7 +97,9 @@ function ClusterBody({ data }: { data: ClusterDetailResponse }) {
 
         {c.llm_reasoning && (
           <section className="detail__section">
-            <h2 className="detail__section-title">LLM judgment</h2>
+            <h2 className="detail__section-title">
+              {isMarketDriven(c) ? 'Market explainer' : 'LLM judgment'}
+            </h2>
             <p className="reasoning">{c.llm_reasoning.reason}</p>
             {c.llm_reasoning.score != null && (
               <p className="byline">Score {c.llm_reasoning.score.toFixed(2)}</p>
@@ -105,6 +107,33 @@ function ClusterBody({ data }: { data: ClusterDetailResponse }) {
             {c.llm_reasoning.at && (
               <p className="byline">Logged {fmtRelative(c.llm_reasoning.at)}</p>
             )}
+          </section>
+        )}
+
+        {c.research.length > 0 && (
+          <section className="detail__section">
+            <h2 className="detail__section-title">
+              Research sources ({c.research.length})
+            </h2>
+            <ul className="articlelist">
+              {c.research.map((r) => (
+                <li key={r.url}>
+                  <span className="articlelist__title">
+                    <a href={r.url} target="_blank" rel="noreferrer">
+                      {r.title}
+                    </a>
+                  </span>
+                  <span className="articlelist__meta">
+                    {[r.source, r.age, r.fetched ? 'page fetched' : 'snippet only']
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="byline" style={{ marginTop: '0.6rem' }}>
+              News search via Brave Search
+            </p>
           </section>
         )}
 

@@ -1,3 +1,4 @@
+import { readBrief } from './editorial';
 import { parseLlmReasoning } from './api';
 import { marketDrivenDescription, topicLabel, type ClusterRowForEmbed } from './discord_cluster_embed';
 import type { Env } from './env';
@@ -10,7 +11,7 @@ export type ClusterShareMeta = {
 
 const SITE_NAME = 'Anything Interesting';
 const DEFAULT_DESCRIPTION =
-  'Anything Interesting — a precision-first dispatch of geopolitics, politics, economics, and technology, with Polymarket signal.';
+  'Anything Interesting — discoveries, achievements and important news worth talking about.';
 
 function escapeAttr(value: string): string {
   return value
@@ -53,13 +54,14 @@ export function buildClusterShareDescription(
 export async function fetchClusterShareMeta(env: Env, id: number): Promise<ClusterShareMeta | null> {
   const row = await env.DB
     .prepare(
-      `SELECT id, representative_title, topic, flow_type, llm_reasoning_log,
+      `SELECT id, representative_title, topic, flow_type, llm_reasoning_log, editorial_json,
               polymarket_price, polymarket_price_24h_ago
        FROM clusters
        WHERE id = ?`,
     )
     .bind(id)
     .first<{
+      editorial_json?: string | null;
       id: number;
       representative_title: string;
       topic: string;
@@ -79,9 +81,10 @@ export async function fetchClusterShareMeta(env: Env, id: number): Promise<Clust
           .bind(id)
           .first<{ title: string }>();
 
+  const brief = readBrief(row.editorial_json);
   return {
-    title: buildClusterShareTitle(row.representative_title, top?.title ?? null, row.flow_type),
-    description: buildClusterShareDescription(row),
+    title: brief?.headline ?? buildClusterShareTitle(row.representative_title, top?.title ?? null, row.flow_type),
+    description: brief?.what_happened.slice(0, 300) ?? buildClusterShareDescription(row),
     topic: topicLabel(row.topic),
   };
 }
@@ -124,7 +127,7 @@ export async function handleClusterSpaPage(
   }
 
   const id = Number.parseInt(idRaw, 10);
-  const shellReq = new Request(new URL('/index.html', req.url), req);
+  const shellReq = new Request(new URL('/', req.url), req);
   const [shell, meta] = await Promise.all([
     env.ASSETS.fetch(shellReq),
     Number.isFinite(id) && id > 0 ? fetchClusterShareMeta(env, id) : Promise.resolve(null),

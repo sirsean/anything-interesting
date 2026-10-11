@@ -7,7 +7,7 @@ type Props = {
 export default function Colophon({ generatedAt }: Props) {
   return (
     <footer className="colophon">
-      <span>Compiled hourly. Quiet days are honest days.</span>
+      <span>Collected hourly. A few things worth talking about, each afternoon.</span>
       <span>
         <Link to="/archive">Archive</Link>
       </span>

@@ -50,3 +50,17 @@ AI_GATEWAY_ID = ""
 JUDGMENT_MODEL = ""
 # Digest embed title links: `{PUBLIC_SITE_URL}/cluster/:id` (SPA on the same Worker).
 PUBLIC_SITE_URL = "https://anything-interesting.sirsean.workers.dev"
+
+# Family newspaper: hourly collection, one daily edition.
+LLM_PROVIDER = "auto"
+OPENAI_MODEL = "gpt-6-luna"
+AI_DAILY_CALL_LIMIT = "200"
+AI_DAILY_TOKEN_LIMIT = "600000"
+DIGEST_TIMEZONE = "America/Chicago"
+DIGEST_HOUR = "17"
+DIGEST_MAX_ITEMS = "5"
+FAMILY_INTERESTS = ""
+LOCAL_NEWS_REGION = ""
+ENABLE_MARKET_ENRICHMENT = "false"
+ENABLE_NEWS_DISCOVERY = "false"
+# OPENAI_API_KEY is a Worker secret: npx wrangler secret put OPENAI_API_KEY

@@ -41,7 +41,7 @@ async function glmSameStory(env: Env, a: string, b: string): Promise<boolean> {
         content: `A: ${a.slice(0, 400)}\nB: ${b.slice(0, 400)}`,
       },
     ],
-    { max_tokens: 64, temperature: 0 },
+    { max_tokens: 512, temperature: 0 },
   );
   const txt = textFromChatOut(raw);
   const m = txt.match(/\{[\s\S]*\}/);
@@ -96,7 +96,7 @@ export async function pickClusterForHeadline(
 
   const clusterExists = async (id: number): Promise<boolean> => {
     const row = await db
-      .prepare('SELECT 1 AS x FROM clusters WHERE id = ?')
+      .prepare("SELECT 1 AS x FROM clusters WHERE id = ? AND flow_type != 'market_driven'")
       .bind(id)
       .first<{ x: number }>();
     return row != null;

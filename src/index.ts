@@ -1,9 +1,11 @@
 import { handleApiRequest } from './api';
 import { handleClusterSpaPage } from './cluster_spa_meta';
-import { deliverDigest } from './digest';
+import { prepareEdition, deliverEdition, claimLease, releaseLease, reconcileDelivery } from './editions';
+import { analyzePendingStories } from './editorial';
+import { editionDue } from './news_config';
+import { discoverNews } from './news_discovery';
 import { runIngest } from './ingest';
 import type { Env } from './env';
-import { getChicagoHour, isDigestHour } from './chicago';
 import { handleDiscordInteraction } from './interactions';
 import { syncDigestReactions } from './reaction_sync';
 import { runMarketSnapshotsAndStrategyB } from './snapshots';
@@ -11,57 +13,35 @@ import { prepareClusterEval, runClusterEval, runClusterEvalPreset } from './clus
 import { refreshWatchlistIfDue } from './watchlist';
 
 /** Same work as the hourly cron (`scheduled`). Used by `GET /__scheduled` on loopback in wrangler dev. */
-export async function runScheduledTick(
-  env: Env,
-  opts?: { forceWatchlist?: boolean },
-): Promise<void> {
-  const hourCT = getChicagoHour();
-  console.log(`scheduled tick Chicago hour=${hourCT}`);
-
-  // Watchlist runs once per ~24h regardless of which hour wins; cheap no-op
-  // when fresh (just a KV read).
+export async function runScheduledTick(env: Env, opts?: { forceWatchlist?: boolean; now?: Date; collectOnly?: boolean }): Promise<{ status: 'busy' | 'complete' | 'failed'; stats?: Record<string, unknown> }> {
+  const owner = await claimLease(env, 'hourly-pipeline', 60);
+  if (!owner) return { status: 'busy' };
+  const now = opts?.now ?? new Date(), id = crypto.randomUUID();
+  const stats: Record<string, unknown> = {}, errors: string[] = [];
   try {
-    const slugs = await refreshWatchlistIfDue(env, { force: opts?.forceWatchlist === true });
-    if (slugs.length > 0) {
-      console.log(`watchlist refresh persisted=${slugs.length}`);
-    } else if (opts?.forceWatchlist) {
-      console.log('watchlist refresh forced but persisted=0');
+    await env.DB.prepare("INSERT INTO pipeline_runs (id, started_at, status) VALUES (?, ?, 'running')").bind(id, now.toISOString()).run();
+    async function step(name: string, work: () => Promise<unknown>) {
+      try { stats[name] = await work(); }
+      catch (e) { errors.push(name + ': ' + (e instanceof Error ? e.message.slice(0, 200) : 'failed')); }
     }
-  } catch (e) {
-    console.error('watchlist refresh error', e);
-  }
-
-  try {
-    await syncDigestReactions(env);
-  } catch (e) {
-    console.error('reaction sync error', e);
-  }
-
-  try {
-    const stats = await runIngest(env);
-    console.log(`ingest done inserted=${stats.inserted} skippedDup=${stats.skippedDup}`);
-  } catch (e) {
-    console.error('ingest error', e);
-  }
-
-  try {
-    const m = await runMarketSnapshotsAndStrategyB(env);
-    console.log(
-      `snapshots done snapshotted=${m.snapshotted} flagged=${m.flagged} market_driven=${m.marketDriven}`,
-    );
-  } catch (e) {
-    console.error('snapshots/strategy-B error', e);
-  }
-
-  if (!isDigestHour()) {
-    return;
-  }
-
-  try {
-    await deliverDigest(env, hourCT);
-  } catch (e) {
-    console.error('digest error', e);
-  }
+    await step('discovery', () => discoverNews(env, now));
+    await step('ingestion', () => runIngest(env));
+    await step('analysis', () => analyzePendingStories(env));
+    if (!opts?.collectOnly && editionDue(env, now)) await step('edition', async () => {
+      const edition = await prepareEdition(env, now);
+      if (edition) await deliverEdition(env, edition);
+      return edition?.id ?? null;
+    });
+    if (!opts?.collectOnly) await step('feedback', () => syncDigestReactions(env));
+    if (!opts?.collectOnly && (env.ENABLE_MARKET_ENRICHMENT === 'true' || opts?.forceWatchlist)) {
+      await step('watchlist', () => refreshWatchlistIfDue(env, { force: opts?.forceWatchlist }));
+      await step('markets', () => runMarketSnapshotsAndStrategyB(env));
+    }
+    await env.DB.prepare("UPDATE pipeline_runs SET finished_at = datetime('now'), status = ?, stats_json = ?, error = ? WHERE id = ?")
+      .bind(errors.length ? 'failed' : 'complete', JSON.stringify(stats), errors.length ? errors.join('; ') : null, id).run();
+    console.log('News pipeline complete', JSON.stringify(stats));
+    return { status: errors.length ? 'failed' : 'complete', stats };
+  } finally { await releaseLease(env, 'hourly-pipeline', owner); }
 }
 
 export default {
@@ -91,6 +71,20 @@ export default {
     }
     if (req.method === 'GET' && url.pathname === '/health') {
       return Response.json({ ok: true, service: 'anything-interesting' });
+    }
+    if (req.method === 'POST' && url.pathname === '/ops/news/refresh') {
+      if (!env.OPS_TOKEN || req.headers.get('X-Ops-Token') !== env.OPS_TOKEN) return new Response('forbidden', { status: 403 });
+      const result = await runScheduledTick(env, { collectOnly: true });
+      return Response.json(result, { status: result.status === 'busy' ? 409 : 200 });
+    }
+    if (req.method === 'POST' && url.pathname === '/ops/edition/reconcile') {
+      if (!env.OPS_TOKEN || req.headers.get('X-Ops-Token') !== env.OPS_TOKEN) return new Response('forbidden', { status: 403 });
+      try { return Response.json({ edition: await reconcileDelivery(env, await req.json()) }); }
+      catch (e) { return Response.json({ error: e instanceof Error ? e.message : 'Reconciliation failed' }, { status: 400 }); }
+    }
+    if (req.method === 'POST' && url.pathname === '/ops/edition/prepare') {
+      if (!env.OPS_TOKEN || req.headers.get('X-Ops-Token') !== env.OPS_TOKEN) return new Response('forbidden', { status: 403 });
+      return Response.json({ edition: await prepareEdition(env) });
     }
     if (req.method === 'POST' && url.pathname === '/ops/cluster-eval/prepare') {
       const t = req.headers.get('X-Ops-Token');
@@ -240,6 +234,6 @@ export default {
   },
 
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
-    await runScheduledTick(env);
+    await runScheduledTick(env, { now: new Date(_event.scheduledTime) });
   },
 };

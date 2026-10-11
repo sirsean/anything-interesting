@@ -158,9 +158,8 @@ export async function matchClusterToMarkets(
   if (top.similarity < MATCH_THRESHOLD) return null;
 
   const keepSlugs = await kimiRerank(env, storyTitle, candidates.slice(0, 5));
-  const winner = keepSlugs.size > 0
-    ? candidates.find((c) => keepSlugs.has(c.slug)) ?? top
-    : top;
+  const winner = candidates.find((c) => keepSlugs.has(c.slug) && c.similarity >= MATCH_THRESHOLD);
+  if (!winner) return null;
 
   const priceNow = await readLatestPrice(env, winner.slug);
   const price24h = await readPrice24hAgo(env, winner.slug);

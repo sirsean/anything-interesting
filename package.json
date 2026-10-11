@@ -15,7 +15,10 @@
     "db:reset-local": "wrangler d1 execute anything-interesting --local --file scripts/reset-local-d1.sql",
     "db:remote": "wrangler d1 migrations apply anything-interesting --remote",
     "discord:register-topnews": "node scripts/register-topnews.mjs",
-    "cluster:eval": "node scripts/cluster-eval.mjs"
+    "cluster:eval": "node scripts/cluster-eval.mjs",
+    "editorial:eval": "vitest run test/editorial_eval.test.ts --reporter=verbose",
+    "sources:check": "node --experimental-strip-types scripts/check-feeds.mjs",
+    "editorial:smoke": "node scripts/editorial-live-smoke.mjs"
   },
   "keywords": [],
   "author": "",

@@ -3,6 +3,8 @@
  * @see https://api-dashboard.search.brave.com/app/documentation/news-search
  */
 
+import { readBoundedText } from './http';
+
 const BRAVE_NEWS_URL = 'https://api.search.brave.com/res/v1/news/search';
 
 export type BraveNewsHit = {
@@ -82,6 +84,7 @@ export async function searchBraveNews(
   let res: Response;
   try {
     res = await fetch(url.toString(), {
+      signal: AbortSignal.timeout(10000),
       headers: {
         Accept: 'application/json',
         'X-Subscription-Token': key,
@@ -94,14 +97,13 @@ export async function searchBraveNews(
   }
 
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    console.error(`Brave News HTTP ${res.status}`, body.slice(0, 300));
+    console.error(`Brave News HTTP ${res.status}`);
     return [];
   }
 
   let json: BraveNewsApiResponse;
   try {
-    json = (await res.json()) as BraveNewsApiResponse;
+    json = JSON.parse(await readBoundedText(res, 300000)) as BraveNewsApiResponse;
   } catch (e) {
     console.error('Brave News JSON parse failed', e);
     return [];

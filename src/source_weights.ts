@@ -27,10 +27,10 @@ export function sqlWeightedSourceSumInWindow(): string {
              MAX(COALESCE(sw.pos_count, 0)) AS pc,
              MAX(COALESCE(sw.neg_count, 0)) AS nc
       FROM articles a
-      LEFT JOIN source_weights sw ON sw.source = a.source
+      LEFT JOIN source_weights sw ON sw.source = COALESCE(a.publisher, a.source)
       WHERE a.cluster_id = c.id
         AND datetime(a.fetched_at) >= datetime('now', ?)
-      GROUP BY a.source
+      GROUP BY COALESCE(a.publisher, a.source)
     ) t
   )`;
 }
@@ -56,9 +56,9 @@ export async function weightedDistinctSourceSum(
          MAX(COALESCE(sw.pos_count, 0)) AS pc,
          MAX(COALESCE(sw.neg_count, 0)) AS nc
        FROM articles a
-       LEFT JOIN source_weights sw ON sw.source = a.source
+       LEFT JOIN source_weights sw ON sw.source = COALESCE(a.publisher, a.source)
        WHERE a.cluster_id = ? ${timeClause}
-       GROUP BY a.source`,
+       GROUP BY COALESCE(a.publisher, a.source)`,
     )
     .bind(...binds)
     .all<{ w: number; pc: number; nc: number }>();
@@ -72,7 +72,7 @@ export async function weightedDistinctSourceSum(
 
 export async function distinctSourcesForCluster(db: D1Database, clusterId: number): Promise<string[]> {
   const { results } = await db
-    .prepare(`SELECT DISTINCT source FROM articles WHERE cluster_id = ?`)
+    .prepare(`SELECT DISTINCT COALESCE(publisher, source) AS source FROM articles WHERE cluster_id = ?`)
     .bind(clusterId)
     .all<{ source: string }>();
   return (results ?? []).map((r) => r.source);
@@ -117,7 +117,7 @@ export async function clusterIdsTouchingSources(
   if (sources.length === 0) return [];
   const ph = sources.map(() => '?').join(',');
   const { results } = await db
-    .prepare(`SELECT DISTINCT cluster_id FROM articles WHERE source IN (${ph})`)
+    .prepare(`SELECT DISTINCT cluster_id FROM articles WHERE COALESCE(publisher, source) IN (${ph})`)
     .bind(...sources)
     .all<{ cluster_id: number }>();
   const ids = new Set<number>();

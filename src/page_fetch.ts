@@ -1,3 +1,4 @@
+import { readBoundedText } from './http';
 /**
  * Lightweight HTML → plain-text extraction for market research page fetches.
  * Best-effort: paywalls and bot blocks are expected; callers keep Brave snippets.
@@ -75,9 +76,7 @@ export async function fetchPageExcerpt(
     if (ctype && !ctype.includes('html') && !ctype.includes('text/plain') && !ctype.includes('xml')) {
       return { url, ok: false, excerpt: '', status: res.status };
     }
-    const buf = await res.arrayBuffer();
-    const slice = buf.byteLength > maxBytes ? buf.slice(0, maxBytes) : buf;
-    const html = new TextDecoder('utf-8', { fatal: false, ignoreBOM: true }).decode(slice);
+    const html = await readBoundedText(res, maxBytes);
     const text = stripHtmlToText(html);
     if (text.length < 80) {
       return { url, ok: false, excerpt: '', status: res.status };

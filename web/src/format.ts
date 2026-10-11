@@ -10,7 +10,7 @@ export function isMarketDriven(c: { flow_type: string }): boolean {
 }
 
 export function clusterTitle(c: ClusterItem): string {
-  const base = c.top_article?.title ?? c.representative_title;
+  const base = c.brief?.headline ?? c.top_article?.title ?? c.representative_title;
   return isMarketDriven(c) ? `📈 ${base}` : base;
 }
 
@@ -39,7 +39,7 @@ export function fmtScore(n: number): string {
 
 export function fmtRelative(iso: string | null | undefined, now: Date = new Date()): string {
   if (!iso) return '';
-  const t = Date.parse(iso);
+  const t = Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(iso) ? iso.replace(' ', 'T') + 'Z' : iso);
   if (!Number.isFinite(t)) return '';
   const diffMs = now.getTime() - t;
   const minutes = Math.round(diffMs / 60000);

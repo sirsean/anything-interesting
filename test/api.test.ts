@@ -232,7 +232,7 @@ describe('handleApiRequest routing', () => {
 
   it('clamps count + window to safe bounds', async () => {
     const res = await handleApiRequest(
-      new Request('https://example.test/api/topnews?count=9999&window=99999&topic=sports'),
+      new Request('https://example.test/api/topnews?count=9999&window=99999&topic=unknown'),
       makeEnv(),
     );
     const body = (await res!.json()) as {

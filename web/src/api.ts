@@ -46,6 +46,7 @@ export type ClusterResearchSource = {
 };
 
 export type ClusterItem = {
+  brief?: NewsBrief | null; evidence?: NewsEvidence[]; editorial_version?: number;
   id: number;
   representative_title: string;
   topic: string;
@@ -267,3 +268,16 @@ export function fetchMarkets(limit = 50, signal?: AbortSignal): Promise<MarketsR
 export function fetchMarket(slug: string, signal?: AbortSignal): Promise<MarketDetailResponse> {
   return fetchJson<MarketDetailResponse>(`/api/markets/${encodeURIComponent(slug)}`, signal);
 }
+
+export type NewsBrief = {
+  headline: string; what_happened: string; why_interesting: string; detail: string;
+  question: string | null; qualification: string | null; topic: string; event_key: string;
+  confidence: number; curiosity: number; significance: number; explainability: number;
+  novelty: number; new_development: boolean; material_update: boolean; evidence_ids: number[];
+};
+export type NewsEvidence = { id: number; title: string; url: string; publisher: string; published_at: string | null; text: string; kind: string };
+export type NewsHealth = { degraded: boolean; fresh_feeds: number; failed_feeds: number; stale_feeds: number; unchecked_feeds: number; pending_articles: number; pending_stories: number; analyzed_stories: number; provider: string; model: string; usage: { calls: number; tokens: number; estimated_cost_usd: number }; feeds: Array<{ label: string; state: string; error: string | null }> };
+export type NewsEdition = { id: number; day: string; created_at: string; timezone: string; status: string; selection_reason: string; health: NewsHealth; items: Array<{ id: number; position: number; version: number; brief: NewsBrief; evidence: NewsEvidence[]; delivery_status: string }> };
+export function fetchEdition(signal?: AbortSignal): Promise<{ edition: NewsEdition | null }> { return fetchJson('/api/edition', signal); }
+export function fetchEditions(limit = 30, signal?: AbortSignal): Promise<{ items: NewsEdition[] }> { return fetchJson('/api/editions?limit=' + limit, signal); }
+export function fetchNewsHealth(signal?: AbortSignal): Promise<NewsHealth> { return fetchJson('/api/status', signal); }

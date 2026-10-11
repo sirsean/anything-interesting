@@ -20,6 +20,7 @@ const variantClass: Record<Variant, string> = {
 };
 
 function dek(c: ClusterItem): string {
+  if (c.brief) return c.brief.what_happened + ' ' + c.brief.why_interesting;
   if (isMarketDriven(c) && c.llm_reasoning?.reason) return c.llm_reasoning.reason;
   if (c.top_article?.title && c.top_article.title !== c.representative_title) {
     return c.representative_title;
@@ -28,7 +29,7 @@ function dek(c: ClusterItem): string {
 }
 
 export default function StoryCard({ cluster, variant, showDek = true }: Props) {
-  const href = cluster.top_article?.url ?? `/cluster/${cluster.id}`;
+  const href = cluster.brief ? `/cluster/${cluster.id}` : cluster.top_article?.url ?? `/cluster/${cluster.id}`;
   const isExternal = href.startsWith('http');
   const title = clusterTitle(cluster);
   const sources = cluster.sources.join(', ') || (isMarketDriven(cluster) ? 'Polymarket' : '—');
@@ -61,7 +62,7 @@ export default function StoryCard({ cluster, variant, showDek = true }: Props) {
         <p className="story__sources">{sources}</p>
       )}
       <div className="story__meta">
-        <Meter score={cluster.final_score} />
+        {!cluster.brief && <Meter score={cluster.final_score} />}
         <StatusPill status={cluster.digest} />
         <span className="byline">
           <Link to={`/cluster/${cluster.id}`}>Detail</Link>

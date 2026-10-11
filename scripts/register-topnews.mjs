@@ -31,12 +31,12 @@ if (!appId || !token) {
 
 const command = {
   name: 'topnews',
-  description: 'Top scored clusters from the last 12 hours (same pool as digests)',
+  description: 'Interesting news to talk about today',
   options: [
     {
       type: 4,
       name: 'count',
-      description: 'How many clusters to show (1–5)',
+      description: 'How many stories to show (1–5)',
       required: false,
       min_value: 1,
       max_value: 5,
@@ -46,12 +46,7 @@ const command = {
       name: 'topic',
       description: 'Optional topic filter',
       required: false,
-      choices: [
-        { name: 'Geopolitics', value: 'geopolitics' },
-        { name: 'Politics', value: 'politics' },
-        { name: 'Economics', value: 'economics' },
-        { name: 'Technology', value: 'technology' },
-      ],
+      choices: [{"name": "World", "value": "world"}, {"name": "Politics", "value": "politics"}, {"name": "Economics", "value": "economics"}, {"name": "Science", "value": "science"}, {"name": "Space", "value": "space"}, {"name": "Nature", "value": "nature"}, {"name": "Health", "value": "health"}, {"name": "Technology", "value": "technology"}, {"name": "Culture", "value": "culture"}, {"name": "Sports", "value": "sports"}, {"name": "Local", "value": "local"}],
     },
   ],
 };

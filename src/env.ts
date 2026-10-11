@@ -10,6 +10,18 @@ export type Env = {
   HEADLINES: Vectorize;
   MARKETS: Vectorize;
   AI: Ai;
+  OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
+  LLM_PROVIDER?: 'auto' | 'openai' | 'workers-ai';
+  AI_DAILY_CALL_LIMIT?: string;
+  AI_DAILY_TOKEN_LIMIT?: string;
+  DIGEST_TIMEZONE?: string;
+  DIGEST_HOUR?: string;
+  DIGEST_MAX_ITEMS?: string;
+  FAMILY_INTERESTS?: string;
+  LOCAL_NEWS_REGION?: string;
+  ENABLE_MARKET_ENRICHMENT?: string;
+  ENABLE_NEWS_DISCOVERY?: string;
   DISCORD_WEBHOOK_URL?: string;
   /** Application ID (public). `wrangler.toml` [vars] / `.env` for `discord:register-topnews`. */
   DISCORD_APPLICATION_ID?: string;

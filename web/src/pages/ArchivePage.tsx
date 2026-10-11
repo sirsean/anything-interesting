@@ -1,3 +1,5 @@
+import EditionPanel from '../components/EditionPanel';
+import { fetchEditions, type NewsEdition } from '../api';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchDigests, fetchStats, type DigestsResponse, type StatsResponse } from '../api';
@@ -25,6 +27,8 @@ function formatChicagoSlot(iso: string): string {
 }
 
 export default function ArchivePage() {
+  const [editions, setEditions] = useState<NewsEdition[]>([]);
+  const [editionError, setEditionError] = useState(false);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [data, setData] = useState<DigestsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,6 +36,7 @@ export default function ArchivePage() {
 
   useEffect(() => {
     const ctl = new AbortController();
+    fetchEditions(LIMIT, ctl.signal).then(d => setEditions(d.items)).catch(() => { if (!ctl.signal.aborted) setEditionError(true); });
     fetchStats(ctl.signal).then(setStats).catch(() => {
       /* decorative */
     });
@@ -68,10 +73,13 @@ export default function ArchivePage() {
         Past editions
       </h2>
 
+      {editionError && <p className="error">Saved editions could not be loaded.</p>}
+      {editions.map(e => <EditionPanel key={e.id} edition={e} archive />)}
+      {items.length > 0 && <h2 className="frontpage__section-title">Earlier digest records</h2>}
       {loading && <div className="notice">Setting type…</div>}
       {error && <div className="error">{error}</div>}
 
-      {!loading && !error && items.length === 0 && (
+      {!loading && !error && items.length === 0 && editions.length === 0 && (
         <div className="notice">No digests posted yet.</div>
       )}
 

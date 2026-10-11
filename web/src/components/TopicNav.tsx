@@ -1,9 +1,16 @@
 const TOPICS: Array<{ value: string | null; label: string }> = [
   { value: null, label: 'All' },
-  { value: 'geopolitics', label: 'Geopolitics' },
+  { value: 'world', label: 'World' },
   { value: 'politics', label: 'Politics' },
   { value: 'economics', label: 'Economics' },
   { value: 'technology', label: 'Technology' },
+  { value: 'science', label: 'Science' },
+  { value: 'space', label: 'Space' },
+  { value: 'nature', label: 'Nature' },
+  { value: 'health', label: 'Health' },
+  { value: 'culture', label: 'Culture' },
+  { value: 'sports', label: 'Sports' },
+  { value: 'local', label: 'Local' },
 ];
 
 type Props = {

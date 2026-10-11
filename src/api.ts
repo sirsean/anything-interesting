@@ -1,5 +1,8 @@
+import { mapLimit } from './http';
+import { NEWS_TOPICS, LEGACY_TOPICS } from './news_config';
+import { readBrief, qualifies, EDITORIAL_POLICY_VERSION, type Brief, type Evidence } from './editorial';
+import { readEdition, previewEdition, newsHealth } from './editions';
 import { DIGEST_SOURCE_WINDOW_HOURS, MIN_FINAL_SCORE } from './digest_constants';
-import { digestStatusLabel, isDigestEligible } from './digest_status';
 import type { Env } from './env';
 import {
   KIMI_JUDGMENT_DAILY_CAP,
@@ -16,7 +19,7 @@ import {
 } from './polymarket';
 import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
 
-const ALLOWED_TOPICS = new Set(['geopolitics', 'politics', 'economics', 'technology']);
+const ALLOWED_TOPICS = new Set<string>([...NEWS_TOPICS, ...LEGACY_TOPICS]);
 
 const TOPNEWS_DEFAULT_COUNT = 25;
 const TOPNEWS_MAX_COUNT = 50;
@@ -65,6 +68,8 @@ function parseTopicParam(raw: string | null): string | null {
  * by `/api/topnews` and `/api/clusters/:id`.
  */
 type ClusterApiRow = {
+  editorial_policy_version?: string | null;
+  editorial_json?: string | null; editorial_evidence_json?: string | null; editorial_version?: number; last_delivered_version?: number; judgment_status?: string;
   id: number;
   representative_title: string;
   topic: string;
@@ -94,7 +99,7 @@ const CLUSTER_BASE_SELECT = `c.id, c.representative_title, c.topic, c.flow_type,
                               c.polymarket_slug, c.polymarket_price,
                               c.polymarket_price_24h_ago, c.polymarket_match_score,
                               c.llm_reasoning_log, c.first_seen, c.last_updated,
-                              c.posted_digest_id,
+                              c.editorial_policy_version, c.editorial_json, c.editorial_evidence_json, c.editorial_version, c.last_delivered_version, c.judgment_status, c.posted_digest_id,
                               p.digest_timestamp AS posted_digest_at`;
 
 type TopArticleRow = {
@@ -141,7 +146,7 @@ async function fetchSourcesByCluster(
   const ph = clusterIds.map(() => '?').join(',');
   const { results } = await db
     .prepare(
-      `SELECT DISTINCT cluster_id, source FROM articles
+      `SELECT DISTINCT cluster_id, COALESCE(publisher, source) AS source FROM articles
        WHERE cluster_id IN (${ph})
        ORDER BY cluster_id, source ASC`,
     )
@@ -272,6 +277,7 @@ export function parseLlmReasoning(raw: string | null): LlmReasoning | null {
 }
 
 export type ClusterApiItem = {
+  brief: Brief | null; evidence: Evidence[]; editorial_version: number;
   id: number;
   representative_title: string;
   topic: string;
@@ -348,10 +354,15 @@ function shapeClusterItem(
           match_score: row.polymarket_match_score,
         };
 
-  const eligible = isDigestEligible(row);
-  const status_label = digestStatusLabel(row, now);
+  const brief = readBrief(row.editorial_json);
+  const delivered = !!brief && (row.last_delivered_version ?? 0) >= (row.editorial_version ?? 1);
+  const currentAnalysis = row.judgment_status === 'ready' && row.editorial_policy_version === EDITORIAL_POLICY_VERSION;
+  const eligible = brief ? currentAnalysis && qualifies(brief) && !delivered : false;
+  const status_label = brief ? delivered ? 'Included in an edition' : eligible ? 'Ready for the editor' : !currentAnalysis ? 'Awaiting analysis' : 'Below editorial threshold' : row.flow_type === 'market_driven' ? 'Market research' : 'Awaiting analysis';
+  let evidence: Evidence[] = []; try { evidence = JSON.parse(row.editorial_evidence_json ?? '[]'); } catch { /* legacy */ }
 
   return {
+    brief, evidence, editorial_version: row.editorial_version ?? 0,
     id: row.id,
     representative_title: row.representative_title,
     topic: row.topic,
@@ -436,11 +447,11 @@ async function handleTopNews(env: Env, url: URL, now: Date): Promise<Response> {
                      END) AS grace_ok
              FROM clusters c
              LEFT JOIN posts p ON p.id = c.posted_digest_id
-             WHERE datetime(c.last_updated) >= datetime('now', ?)`;
+             WHERE datetime(c.last_updated) >= datetime('now', ?) AND c.flow_type != 'market_driven' AND c.editorial_json IS NOT NULL AND c.judgment_status = 'ready'`;
   const binds: unknown[] = [windowBind, lastDigest, lastDigest, lookback];
   if (topic) {
     sql += ` AND lower(c.topic) = lower(?)`;
-    binds.push(topic);
+    binds.push(topic === 'geopolitics' ? 'world' : topic);
   }
   sql += ` ORDER BY c.final_score DESC, c.last_updated DESC LIMIT ?`;
   binds.push(count);
@@ -530,7 +541,8 @@ async function handleDigests(env: Env, url: URL): Promise<Response> {
   const { results: posts } = await env.DB
     .prepare(
       `SELECT id, digest_timestamp, message_id, channel_kind
-       FROM posts
+       FROM posts p
+       WHERE NOT EXISTS (SELECT 1 FROM editions e WHERE e.post_id = p.id)
        ORDER BY datetime(digest_timestamp) DESC
        LIMIT ?`,
     )
@@ -595,13 +607,13 @@ async function handleStats(env: Env, now: Date): Promise<Response> {
     .prepare(
       `SELECT
          (SELECT COUNT(*) FROM articles WHERE datetime(fetched_at) >= datetime('now', '-24 hours')) AS articles_last_24h,
-         (SELECT COUNT(DISTINCT source) FROM articles WHERE datetime(fetched_at) >= datetime('now', '-24 hours')) AS distinct_sources_last_24h,
-         (SELECT COUNT(*) FROM clusters WHERE final_score >= ? AND posted_digest_id IS NULL) AS clusters_above_threshold,
+         (SELECT COUNT(DISTINCT COALESCE(publisher, source)) FROM articles WHERE datetime(fetched_at) >= datetime('now', '-24 hours')) AS distinct_sources_last_24h,
+         (SELECT COUNT(*) FROM clusters WHERE final_score >= ? AND flow_type != 'market_driven' AND judgment_status = 'ready' AND confidence >= 0.65 AND editorial_policy_version = ? AND editorial_version > last_delivered_version) AS clusters_above_threshold,
          (SELECT COUNT(*) FROM clusters WHERE polymarket_slug IS NOT NULL AND datetime(last_updated) >= datetime('now', '-24 hours')) AS polymarket_matched_count,
          (SELECT COUNT(*) FROM markets WHERE datetime(last_seen_in_watchlist) >= datetime('now', ?)) AS watchlist_markets_count,
          (SELECT COUNT(*) FROM markets WHERE last_snapshot_at IS NOT NULL AND datetime(last_snapshot_at) >= datetime('now', '-24 hours')) AS snapshotted_markets_24h`,
     )
-    .bind(MIN_FINAL_SCORE, `-${WATCHLIST_D1_LOOKBACK_HOURS} hours`)
+    .bind(MIN_FINAL_SCORE, EDITORIAL_POLICY_VERSION, `-${WATCHLIST_D1_LOOKBACK_HOURS} hours`)
     .first<{
       articles_last_24h: number;
       distinct_sources_last_24h: number;
@@ -854,6 +866,20 @@ export async function handleApiRequest(req: Request, env: Env): Promise<Response
   const now = new Date();
 
   try {
+    if (pathname === '/api/status') return jsonResponse(await newsHealth(env));
+    if (pathname === '/api/edition') return jsonResponse({ edition: await readEdition(env) });
+    if (pathname === '/api/edition/preview') return jsonResponse(await previewEdition(env));
+    if (pathname === '/api/editions') {
+      const limit = clampInt(url.searchParams.get('limit'), 10, 1, 30);
+      const rows = (await env.DB.prepare('SELECT id FROM editions ORDER BY day DESC LIMIT ?').bind(limit).all<{ id: number }>()).results ?? [];
+      const items = await mapLimit(rows, 6, r => readEdition(env, r.id));
+      return jsonResponse({ items });
+    }
+    const editionMatch = pathname.match(/^\/api\/editions\/(\d+)$/);
+    if (editionMatch) {
+      const edition = await readEdition(env, Number(editionMatch[1]));
+      return edition ? jsonResponse({ edition }) : errorResponse(404, 'Edition not found');
+    }
     if (pathname === '/api/topnews') {
       return await handleTopNews(env, url, now);
     }

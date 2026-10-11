@@ -1,12 +1,37 @@
 # Current progress
 
-**Project:** News Alerting Agent (Cloudflare Worker + D1 + Vectorize + KV + Discord). Full vision and decisions: `INITIAL.md`.
+**Project:** News Alerting Agent (Cloudflare Worker + D1 + Vectorize + KV + Discord). Active plan: [`IMPLEMENTATION-family-news.md`](IMPLEMENTATION-family-news.md). Historical architecture: `INITIAL.md`.
 
-**Agent workflow:** Work milestones **in order** (M1 → M5). Each milestone file is a self-contained checklist. Update this file when you **start** or **finish** a milestone (date, branch, notes, blockers).
+**Agent workflow:** Work active milestones **in order** (M7 → M12); M1–M6 are historical. Each milestone file is a self-contained checklist. Update this file when you **start** or **finish** a milestone (date, branch, notes, blockers).
 
 ---
 
-## Milestone index
+## Current direction — 2026-10-11
+
+**User request:** Full milestone/task plan and autonomous implementation of the approved family-news direction.
+
+**Status:** M7–M12 complete and deployed. Active plan: [`IMPLEMENTATION-family-news.md`](IMPLEMENTATION-family-news.md). Operator guide: [`ROLLOUT-family-news.md`](ROLLOUT-family-news.md). Defaults: one 17:00 Chicago edition, up to five distinct evidence-based stories, market enrichment off, and OpenAI Luna intelligence.
+
+**Credentials:** User configured `OPENAI_API_KEY` locally and in Cloudflare Secrets. Secret-name inspection and real OpenAI connectivity succeeded without exposing values. No credential blocker remains.
+
+**Implemented:** 25 feeds across broader subjects; durable archival/retries, publisher identities, evidence/page excerpts, versioned editorial policy, shared Luna adapter, atomic budgets, immutable daily editions and delivery reconciliation, website/Discord brief parity, interest votes and public pipeline health. Live calibration rejects routine sport and evergreen profiles while retaining credible specialist discoveries.
+
+**Validation and rollout:**
+
+- 176 tests passed across 27 files, including real SQLite migrations, budget concurrency, retry/delivery behavior and nine labeled editorial regression scenarios. Both TypeScript checks and final diff checks passed.
+- All migrations 0009–0011 applied to project-local D1, isolated preview D1 and production D1. Tests preserve historical articles/posts/markets/snapshots and backfill previously delivered versions.
+- Production build and Wrangler dry run passed. Final deployed version: `e5b7411b-2d53-4969-920e-d266227b838c`; global `/topnews` registration updated.
+- Development-host probes and production collection both verified all 25 feeds; production reported 25 fresh, zero failed/stale/unchecked.
+- Two protected collection-only passes completed (166s and 150s); the real hourly scheduled run also completed (18:00:17–18:04:55 UTC). Each enriched 40 articles and analyzed 16 stories without deferred model failures. The first pass archived 89 new and 43 changed articles.
+- Real Luna science/sport checks validated the actual API contract and editorial calibration. Final production preview spans science, technology, health, world and nature; no market-driven entries. At the final check, 70 text calls and 107,489 reserved/actual tokens were recorded, with about $0.017 estimated successful Luna usage (infrastructure excluded).
+- Local saved-edition desktop/mobile/archive/detail checks and live production desktop/mobile/detail checks passed with no page errors or horizontal overflow. Final layout and policy-aware eligibility badges verified. Credential scan found no values in tracked diffs, untracked project files or public client assets.
+
+**Runtime notes:** Existing historical analysis backlog remains visible and is processed/aged out by bounded hourly work. The read-only preview is deterministic; the scheduled final editor can choose fewer or different stories. No manual Discord test messages were sent; the first new daily edition is due at 17:00 America/Chicago on 2026-10-11. Actual Discord delivery and first-week family usefulness are post-rollout observations, not claims established by offline tests. Quiet days and incomplete collection are distinct states.
+
+**Next:** Review the first seven delivered editions using the usefulness checklist in the rollout guide; use reactions and optional interests/locality to tune from real feedback. There is no remaining implementation blocker. On 2026-10-11, the user explicitly authorized committing and pushing this completed rollout to `main`.
+---
+
+## Historical milestone index — M1–M6
 
 | Order | File | Summary |
 | ----- | ---- | ------- |
@@ -19,7 +44,7 @@
 
 ---
 
-## Status
+## Historical status — M1–M6
 
 | Milestone | State | Owner / notes |
 | --------- | ----- | ------------- |
@@ -114,7 +139,7 @@ Feeds in `src/sources.ts` (`M1_FEEDS`): **The Guardian** World, **BBC** World, *
 
 **2026-07-03:** **Kimi K2.6 fix:** `runLLM` now passes `chat_template_kwargs: { thinking: false }` for Kimi models (K2.6 defaults to thinking mode, which left `message.content` empty and pinned every judgment at the 0.45 parse fallback). `textFromChatOut` also reads `reasoning` / `reasoning_content` when `content` is empty. Strategy A Polymarket matching now runs on **every** news cluster (not only ≥3 weighted sources); vector similarity ≥ 0.70 satisfies the candidacy gate per `INITIAL.md`. **Next:** deploy, spot-check `llm_reasoning_log` for non-empty reasons + varied scores; re-evaluate clustering thresholds and surprise in `final_score` once Kimi is confirmed in prod.
 
-_Last updated: 2026-08-07 — Strategy B always-on Brave News + page-fetch research; research URLs on cluster UI. Prior: 2026-07-12 cluster OG meta._
+_Last updated: 2026-10-11 — active family-news implementation described at the top; M1–M6 below are history._
 
 **2026-08-07 (market research):** Strategy B flagged moves always call Brave News (`pd` then `pw`) and page-fetch top URLs before Kimi explain. Research persisted in `llm_reasoning_log.research[]` and exposed as `cluster.research` in the API / cluster detail page. Explainer prompt no longer nudges “market positioning” filler. No digest gate. Operator: `wrangler secret put BRAVE_SEARCH_API_KEY`.
 

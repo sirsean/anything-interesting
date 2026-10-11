@@ -1,10 +1,4 @@
 import type { Env } from './env';
-import {
-  clusterIdsTouchingSources,
-  recordClusterReaction,
-} from './source_weights';
-import { refreshClusterScores } from './scoring';
-
 const DISCORD_API = 'https://discord.com/api/v10';
 const THUMB_UP = encodeURIComponent('👍');
 const THUMB_DOWN = encodeURIComponent('👎');
@@ -27,7 +21,7 @@ async function resolveWebhookChannelId(env: Env, webhookUrl: string): Promise<st
   const meta = parseWebhookUrl(webhookUrl);
   if (!meta) return null;
 
-  const res = await fetch(`${DISCORD_API}/webhooks/${meta.id}/${meta.token}`);
+  const res = await fetch(`${DISCORD_API}/webhooks/${meta.id}/${meta.token}`, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) {
     console.error('resolveWebhookChannelId failed', res.status);
     return null;
@@ -47,11 +41,11 @@ async function fetchReactionUserIds(
 ): Promise<string[]> {
   const out: string[] = [];
   let after: string | undefined;
-  for (;;) {
+  for (let page = 0; page < 2; page++) {
     const q = new URLSearchParams({ limit: '100' });
     if (after) q.set('after', after);
     const url = `${DISCORD_API}/channels/${channelId}/messages/${messageId}/reactions/${encodedEmoji}?${q}`;
-    const res = await fetch(url, { headers: { Authorization: `Bot ${botToken}` } });
+    const res = await fetch(url, { headers: { Authorization: `Bot ${botToken}` }, signal: AbortSignal.timeout(8000) });
     if (!res.ok) {
       const t = await res.text();
       console.error('fetchReactionUserIds', res.status, t.slice(0, 200));
@@ -59,7 +53,7 @@ async function fetchReactionUserIds(
     }
     const arr = (await res.json()) as Array<{ id?: string }>;
     for (const u of arr) {
-      if (typeof u.id === 'string') out.push(u.id);
+      if (!(u as { bot?: boolean }).bot && typeof u.id === 'string') out.push(u.id);
     }
     if (arr.length < 100) break;
     const last = arr[arr.length - 1]?.id;
@@ -102,41 +96,26 @@ async function processEmojiSide(
   clusterId: number,
   encodedEmoji: string,
   direction: 'up' | 'down',
-): Promise<string[]> {
+  modern: boolean,
+  topic: string,
+): Promise<void> {
   const ids = await fetchReactionUserIds(botToken, channelId, messageId, encodedEmoji);
   const initKey = kvInitKey(messageId, direction);
   const inited = await env.CONFIG.get(initKey);
   if (!inited) {
     await env.CONFIG.put(initKey, '1', { expirationTtl: 86400 * 60 });
-    await saveSeen(env, messageId, direction, new Set(ids));
-    return [];
+    if (!modern) { await saveSeen(env, messageId, direction, new Set(ids)); return; }
   }
 
   const seen = await loadSeen(env, messageId, direction);
-  const touchedSources = new Set<string>();
 
   for (const userId of ids) {
     if (seen.has(userId)) continue;
-    const { applied, sources } = await recordClusterReaction(env.DB, messageId, clusterId, userId, direction);
-    if (applied) {
-      seen.add(userId);
-      for (const s of sources) touchedSources.add(s);
-    }
+    await env.DB.prepare('INSERT OR IGNORE INTO interest_votes (message_id, user_id, direction, cluster_id, topic) VALUES (?, ?, ?, ?, ?)').bind(messageId, userId, direction, clusterId, topic).run();
+    seen.add(userId);
   }
 
   await saveSeen(env, messageId, direction, seen);
-  return [...touchedSources];
-}
-
-async function refreshClustersForSources(env: Env, sources: string[]): Promise<void> {
-  const ids = await clusterIdsTouchingSources(env.DB, sources);
-  for (const id of ids) {
-    try {
-      await refreshClusterScores(env, id);
-    } catch (e) {
-      console.error('refreshClusterScores after reactions', id, e);
-    }
-  }
 }
 
 /**
@@ -159,28 +138,24 @@ export async function syncDigestReactions(env: Env): Promise<void> {
 
   const { results } = await env.DB
     .prepare(
-      `SELECT pcm.message_id, pcm.cluster_id
+      `SELECT pcm.message_id, pcm.cluster_id, COALESCE(json_extract(i.brief_json, '$.topic'), c.topic) AS topic, i.edition_id
        FROM post_cluster_messages pcm
        JOIN posts p ON p.id = pcm.post_id
+       JOIN clusters c ON c.id = pcm.cluster_id
+       LEFT JOIN edition_items i ON i.message_id = pcm.message_id
        WHERE datetime(p.digest_timestamp) >= datetime('now', '-14 days')
        ORDER BY p.digest_timestamp DESC
-       LIMIT 120`,
+       LIMIT 30`,
     )
-    .all<{ message_id: string; cluster_id: number }>();
+    .all<{ message_id: string; cluster_id: number; topic: string; edition_id: number | null }>();
 
   const rows = results ?? [];
   if (rows.length === 0) return;
 
-  const allTouched = new Set<string>();
+  const started = Date.now();
   for (const r of rows) {
-    const up = await processEmojiSide(env, bot, channelId, r.message_id, r.cluster_id, THUMB_UP, 'up');
-    const down = await processEmojiSide(env, bot, channelId, r.message_id, r.cluster_id, THUMB_DOWN, 'down');
-    for (const s of up) allTouched.add(s);
-    for (const s of down) allTouched.add(s);
-  }
-
-  if (allTouched.size > 0) {
-    await refreshClustersForSources(env, [...allTouched]);
-    console.log(`reaction sync: touched_sources=${allTouched.size} messages=${rows.length}`);
+    if (Date.now() - started > 30_000) break;
+    await processEmojiSide(env, bot, channelId, r.message_id, r.cluster_id, THUMB_UP, 'up', r.edition_id != null, r.topic);
+    await processEmojiSide(env, bot, channelId, r.message_id, r.cluster_id, THUMB_DOWN, 'down', r.edition_id != null, r.topic);
   }
 }

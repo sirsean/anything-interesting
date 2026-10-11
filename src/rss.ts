@@ -1,10 +1,13 @@
 import { XMLParser } from 'fast-xml-parser';
 import type { FeedSource } from './sources';
+import { readBoundedText, canonicalArticleUrl } from './http';
+import { stripHtmlToText } from './page_fetch';
 
 export type ParsedItem = {
   title: string;
   url: string;
   publishedAt: string | null;
+  description: string;
 };
 
 const UA =
@@ -96,19 +99,26 @@ function itemsFromParsedDoc(doc: Record<string, unknown>): Record<string, unknow
   return null;
 }
 
+export type FeedResult = { items: ParsedItem[]; error: string | null; checkedAt: string };
+export async function fetchFeed(source: FeedSource): Promise<FeedResult> {
+  const checkedAt = new Date().toISOString();
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 10_000);
+  try {
+    const res = await fetch(source.url, { signal: ctl.signal, headers: {
+      'User-Agent': UA, Accept: 'application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9',
+    } });
+    if (!res.ok) return { items: [], error: `HTTP ${res.status}`, checkedAt };
+    const items = parseFeedXml(await readBoundedText(res, 2_000_000));
+    return { items, error: items.length ? null : 'No usable feed items', checkedAt };
+  } catch (error) {
+    return { items: [], error: error instanceof Error ? error.message.slice(0, 200) : 'Feed fetch failed', checkedAt };
+  } finally { clearTimeout(timer); }
+}
 export async function fetchFeedItems(source: FeedSource): Promise<ParsedItem[]> {
-  const res = await fetch(source.url, {
-    headers: {
-      'User-Agent': UA,
-      Accept:
-        'application/atom+xml, application/rss+xml, application/rdf+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
-    },
-  });
-  if (!res.ok) {
-    console.error(`RSS fetch failed ${source.id}: ${res.status} ${source.url}`);
-    return [];
-  }
-  const xml = await res.text();
+  return (await fetchFeed(source)).items;
+}
+export function parseFeedXml(xml: string): ParsedItem[] {
   const parser = new XMLParser({
     ignoreAttributes: false,
     trimValues: true,
@@ -118,14 +128,15 @@ export async function fetchFeedItems(source: FeedSource): Promise<ParsedItem[]> 
   const doc = parser.parse(xml) as Record<string, unknown>;
   const list = itemsFromParsedDoc(doc);
   if (!list || list.length === 0) {
-    console.error(`RSS parse: no recognized feed shape for ${source.id}`);
+    console.error(`RSS parse: no recognized feed shape in XML`);
     return [];
   }
 
   const out: ParsedItem[] = [];
   for (const item of list) {
     const title = pickText(item.title);
-    const url = pickLink(item);
+    const rawUrl = pickLink(item);
+    const url = rawUrl ? canonicalArticleUrl(rawUrl) : null;
     if (!title || !url) continue;
     const pub =
       pickText(item.pubDate) ??
@@ -139,7 +150,8 @@ export async function fetchFeedItems(source: FeedSource): Promise<ParsedItem[]> 
       const d = new Date(pub);
       publishedAt = Number.isNaN(d.getTime()) ? null : d.toISOString();
     }
-    out.push({ title, url, publishedAt });
+    const description = stripHtmlToText(pickText(item.description) ?? pickText(item.summary) ?? pickText(item.encoded) ?? pickText(item.content) ?? '').slice(0, 5000);
+    out.push({ title: stripHtmlToText(title).slice(0, 500), url, publishedAt, description });
   }
   return out;
 }

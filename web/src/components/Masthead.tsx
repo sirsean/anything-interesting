@@ -27,20 +27,14 @@ export default function Masthead({ stats }: Props) {
       <div className="masthead__strap">
         <div className="masthead__strap-stats">
           <span>
-            Stories <span className="strong">{stats?.articles_last_24h ?? '—'}</span>
+            Articles <span className="strong">{stats?.articles_last_24h ?? '—'}</span>
           </span>
           <span>
             Outlets <span className="strong">{stats?.distinct_sources_last_24h ?? '—'}</span>
           </span>
           <span>
-            Above the cut{' '}
+            Ready for the editor{' '}
             <span className="strong">{stats?.clusters_above_threshold ?? '—'}</span>
-          </span>
-          <span>
-            Market-tied <span className="strong">{stats?.polymarket_matched_count ?? '—'}</span>
-          </span>
-          <span>
-            Watchlist <span className="strong">{stats?.watchlist_markets_count ?? '—'}</span>
           </span>
         </div>
         <div className="masthead__strap-links">

@@ -22,7 +22,7 @@ export const PROD_CLUSTER_CONFIG: ClusterConfig = {
   cosineSame: 0.8,
   cosineLow: 0.74,
   corpusDays: 7,
-  grayZonePolicy: 'always_merge_gray',
+  grayZonePolicy: 'glm_required',
 };
 
 export const CLUSTER_EVAL_PRESETS: Record<string, ClusterConfig> = {

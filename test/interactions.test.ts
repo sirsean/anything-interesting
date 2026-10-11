@@ -36,7 +36,7 @@ describe('parseTopNewsOptions', () => {
   it('ignores disallowed topic strings', () => {
     expect(
       parseTopNewsOptions({
-        options: [{ name: 'topic', type: 3, value: 'sports' }],
+        options: [{ name: 'topic', type: 3, value: 'unknown' }],
       }),
     ).toEqual({ count: 3, topic: null });
   });

@@ -15,9 +15,11 @@ export async function postDigestWebhook(
   const join = webhookUrl.includes('?') ? '&' : '?';
   const res = await fetch(`${webhookUrl}${join}wait=true`, {
     method: 'POST',
+    signal: AbortSignal.timeout(15000),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       content,
+      allowed_mentions: { parse: [] },
       embeds: embeds.slice(0, 10),
     }),
   });

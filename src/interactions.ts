@@ -1,17 +1,10 @@
-import {
-  buildClusterDiscordEmbed,
-  marketDrivenDescription,
-  type ClusterRowForEmbed,
-} from './discord_cluster_embed';
-import type { DiscordEmbed } from './discord';
-import { DIGEST_SOURCE_WINDOW_HOURS } from './digest_constants';
-import { digestStatusLabel, type DigestStatusRow } from './digest_status';
 import type { Env } from './env';
-import { bindDigestSourceWindow, sqlWeightedSourceSumInWindow } from './source_weights';
-
+import type { DiscordEmbed } from './discord';
+import { NEWS_TOPICS, LEGACY_TOPICS } from './news_config';
+import { onDemandStories, briefEmbed } from './editions';
 const DISCORD_API = 'https://discord.com/api/v10';
 
-const TOPNEWS_ALLOWED_TOPICS = new Set(['geopolitics', 'politics', 'economics', 'technology']);
+const TOPNEWS_ALLOWED_TOPICS = new Set<string>([...NEWS_TOPICS, ...LEGACY_TOPICS]);
 
 type DiscordInteraction = {
   type: number;
@@ -22,11 +15,6 @@ type DiscordInteraction = {
     options?: Array<{ name: string; type: number; value?: string | number }>;
   };
 };
-
-type TopNewsRow = ClusterRowForEmbed &
-  DigestStatusRow & {
-    last_updated: string;
-  };
 
 function hexToBytes(hex: string): Uint8Array {
   const clean = hex.trim().replace(/^0x/i, '');
@@ -76,52 +64,6 @@ export function parseTopNewsOptions(data: DiscordInteraction['data']): {
   return { count, topic };
 }
 
-async function descriptionForTopNews(c: ClusterRowForEmbed): Promise<string> {
-  if (c.flow_type === 'market_driven') {
-    return marketDrivenDescription(c.representative_title, c);
-  }
-  const rep = c.representative_title;
-  return `${rep.slice(0, 220)}${rep.length > 220 ? '…' : ''}`;
-}
-
-async function queryTopNews(
-  db: D1Database,
-  lastDigestIso: string | null,
-  count: number,
-  topic: string | null,
-): Promise<TopNewsRow[]> {
-  const weightedSub = sqlWeightedSourceSumInWindow();
-  const windowBind = bindDigestSourceWindow();
-  let sql = `SELECT c.id, c.representative_title, c.final_score, c.topic, c.flow_type,
-                    c.polymarket_slug, c.polymarket_price, c.polymarket_price_24h_ago,
-                    c.llm_reasoning_log, c.posted_digest_id, c.last_updated,
-                    p.digest_timestamp AS posted_digest_at,
-                    ${weightedSub} AS weighted_sources_12h,
-                    (
-                      CASE
-                        WHEN ? IS NULL THEN 1
-                        WHEN datetime(c.last_updated) >= datetime(?) THEN 1
-                        ELSE 0
-                      END
-                    ) AS grace_ok
-             FROM clusters c
-             LEFT JOIN posts p ON p.id = c.posted_digest_id
-             WHERE datetime(c.last_updated) >= datetime('now', ?)`;
-
-  const binds: unknown[] = [windowBind, lastDigestIso, lastDigestIso, windowBind];
-
-  if (topic) {
-    sql += ` AND lower(c.topic) = lower(?)`;
-    binds.push(topic);
-  }
-
-  sql += ` ORDER BY c.final_score DESC, c.last_updated DESC LIMIT ?`;
-  binds.push(count);
-
-  const { results } = await db.prepare(sql).bind(...binds).all<TopNewsRow>();
-  return results ?? [];
-}
-
 async function postInteractionFollowup(
   applicationId: string,
   interactionToken: string,
@@ -130,34 +72,16 @@ async function postInteractionFollowup(
   const url = `${DISCORD_API}/webhooks/${encodeURIComponent(applicationId)}/${encodeURIComponent(interactionToken)}`;
   const res = await fetch(url, {
     method: 'POST',
+    signal: AbortSignal.timeout(15000),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       content: payload.content ?? undefined,
+      allowed_mentions: { parse: [] },
       embeds: payload.embeds?.slice(0, 10),
     }),
   });
   const body = await res.text();
   return { ok: res.ok, status: res.status, body: body.slice(0, 500) };
-}
-
-async function buildTopNewsEmbeds(env: Env, rows: TopNewsRow[]): Promise<DiscordEmbed[]> {
-  const out: DiscordEmbed[] = [];
-  for (const r of rows) {
-    const desc = await descriptionForTopNews(r);
-    const embed = await buildClusterDiscordEmbed({
-      db: env.DB,
-      row: r,
-      description: desc,
-      footerTag: 'on-demand',
-    });
-    embed.fields.unshift({
-      name: 'Digest status',
-      value: digestStatusLabel(r).slice(0, 1024),
-      inline: false,
-    });
-    out.push(embed);
-  }
-  return out;
 }
 
 async function runTopNewsCommand(env: Env, interaction: DiscordInteraction): Promise<void> {
@@ -166,13 +90,12 @@ async function runTopNewsCommand(env: Env, interaction: DiscordInteraction): Pro
   const { count, topic } = parseTopNewsOptions(interaction.data);
 
   try {
-    const lastDigest = await env.CONFIG.get('cursors:last_digest_at');
-    const rows = await queryTopNews(env.DB, lastDigest, count, topic);
+    const rows = await onDemandStories(env, count, topic);
 
     if (rows.length === 0) {
       const hint = topic ? ` (topic: ${topic})` : '';
       const posted = await postInteractionFollowup(appId, token, {
-        content: `No clusters scored in the last ${DIGEST_SOURCE_WINDOW_HOURS}h${hint}.`,
+        content: `No evidence-qualified stories available yet${hint}. See the newspaper for collection status.`,
       });
       if (!posted.ok) {
         console.error('topnews followup failed', posted.status, posted.body);
@@ -180,7 +103,7 @@ async function runTopNewsCommand(env: Env, interaction: DiscordInteraction): Pro
       return;
     }
 
-    const embeds = await buildTopNewsEmbeds(env, rows);
+    const embeds = rows.map(r => briefEmbed(env, r));
     const topicBit = topic ? ` · ${topic}` : '';
     const posted = await postInteractionFollowup(appId, token, {
       content: `Top news — ${rows.length} cluster${rows.length === 1 ? '' : 's'}${topicBit}`,

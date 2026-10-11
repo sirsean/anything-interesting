@@ -1,3 +1,4 @@
+import BriefView from '../components/BriefView';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { fetchCluster, fetchStats, type ClusterDetailResponse, type StatsResponse } from '../api';
@@ -81,19 +82,16 @@ function ClusterBody({ data }: { data: ClusterDetailResponse }) {
             title
           )}
         </h1>
-        <p className="detail__lede">{c.representative_title}</p>
+        {c.brief ? <BriefView brief={c.brief} evidence={c.evidence} /> : <p className="detail__lede">{c.representative_title}</p>}
 
         <div className="story__meta" style={{ marginBottom: '1rem' }}>
-          <Meter score={c.final_score} />
+          {!c.brief && <Meter score={c.final_score} />}
           <StatusPill status={c.digest} />
           <span className="byline">First seen {fmtRelative(c.first_seen)}</span>
           <span className="byline">Updated {fmtRelative(c.last_updated)}</span>
         </div>
 
-        <section className="detail__section">
-          <h2 className="detail__section-title">Score breakdown</h2>
-          <ScoreGrid scores={c.scores} finalScore={c.final_score} />
-        </section>
+        <details className="detail__section"><summary>Editorial assessment</summary>{c.brief ? <p className="byline">Confidence {c.brief.confidence.toFixed(2)} · Curiosity {c.brief.curiosity.toFixed(2)} · Significance {c.brief.significance.toFixed(2)} · Explainability {c.brief.explainability.toFixed(2)}</p> : <ScoreGrid scores={c.scores} finalScore={c.final_score} />}</details>
 
         {c.llm_reasoning && (
           <section className="detail__section">
@@ -139,7 +137,7 @@ function ClusterBody({ data }: { data: ClusterDetailResponse }) {
 
         <section className="detail__section">
           <h2 className="detail__section-title">
-            Articles in this cluster ({data.articles.length})
+            Reporting on this story ({data.articles.length})
           </h2>
           <ul className="articlelist">
             {data.articles.map((a) => (
@@ -164,18 +162,11 @@ function ClusterBody({ data }: { data: ClusterDetailResponse }) {
           <p className="byline">
             Distinct outlets <span className="numeric">{c.sources.length}</span>
           </p>
-          <p className="byline">
-            Weighted coverage 12h{' '}
-            <span className="numeric">{c.weighted_sources_12h.toFixed(2)}</span>
-          </p>
-          <p className="byline">
-            Coverage all-time <span className="numeric">{c.source_weight_sum.toFixed(2)}</span>
-          </p>
           <p className="byline" style={{ marginTop: '0.5rem' }}>
             {c.sources.length > 0 ? c.sources.join(' · ') : '—'}
           </p>
         </div>
-        {c.polymarket && <PolymarketCard poly={c.polymarket} />}
+        {c.polymarket && <details><summary>Related market research</summary><PolymarketCard poly={c.polymarket} /></details>}
       </aside>
     </div>
   );

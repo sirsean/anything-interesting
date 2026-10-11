@@ -1,3 +1,5 @@
+import EditionPanel from '../components/EditionPanel';
+import { fetchEdition, fetchNewsHealth, type NewsEdition, type NewsHealth } from '../api';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -19,6 +21,9 @@ export default function FrontPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const topic = searchParams.get('topic');
 
+  const [edition, setEdition] = useState<NewsEdition | null>(null);
+  const [health, setHealth] = useState<NewsHealth | null>(null);
+  const [editionError, setEditionError] = useState(false);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [data, setData] = useState<TopNewsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,6 +31,8 @@ export default function FrontPage() {
 
   useEffect(() => {
     const ctl = new AbortController();
+    fetchEdition(ctl.signal).then(d => setEdition(d.edition)).catch(() => { if (!ctl.signal.aborted) setEditionError(true); });
+    fetchNewsHealth(ctl.signal).then(setHealth).catch(() => {});
     fetchStats(ctl.signal).then(setStats).catch(() => {
       /* stats are decorative */
     });
@@ -68,13 +75,18 @@ export default function FrontPage() {
   return (
     <div className="page">
       <Masthead stats={stats} />
+      {!topic && edition && <EditionPanel edition={edition} />}
+      {!topic && editionError && <p className="error">The saved edition could not be loaded.</p>}
+      {!topic && !edition && !editionError && <p className="notice">The daily edition is prepared each afternoon. Browse the latest reporting below.</p>}
+      {health?.degraded && <p className="notice">Some collection or analysis is incomplete. {health.fresh_feeds} feeds are current; {health.pending_stories} stories await analysis.</p>}
+      <h2 className="frontpage__section-title">Browse the news</h2>
       <TopicNav selected={topic} onSelect={handleTopic} />
 
       {loading && <div className="notice">Setting type…</div>}
       {error && <div className="error">Wire failed: {error}</div>}
 
       {!loading && !error && items.length === 0 && (
-        <div className="notice">No clusters scored in the last {data?.meta.window_hours ?? 24}h.</div>
+        <div className="notice">No analyzed stories in the last {data?.meta.window_hours ?? 24}h.</div>
       )}
 
       {lede && (
@@ -87,7 +99,7 @@ export default function FrontPage() {
 
       {eligibleAboveFold.length > 0 && (
         <section className="frontpage__section">
-          <h2 className="frontpage__section-title">Above the fold</h2>
+          <h2 className="frontpage__section-title">More to explore</h2>
           <div className="frontpage__above">
             {eligibleAboveFold.map((c) => (
               <div className="briefcard" key={c.id}>
@@ -100,7 +112,7 @@ export default function FrontPage() {
 
       {belowFold.length > 0 && (
         <section className="frontpage__section">
-          <h2 className="frontpage__section-title">Below the fold &mdash; including sub-threshold</h2>
+          <h2 className="frontpage__section-title">Around the world &amp; beyond</h2>
           <div className="frontpage__below">
             {belowFold.map((c) => (
               <div className="briefcard" key={c.id}>
@@ -111,6 +123,7 @@ export default function FrontPage() {
         </section>
       )}
 
+      {health && <details className="coverage-details"><summary>Collection status</summary><p>{health.fresh_feeds} current feeds · {health.stale_feeds} stale · {health.failed_feeds} failed · {health.unchecked_feeds} unchecked</p><ul>{health.feeds.map(f => <li key={f.label}>{f.label}: {f.state}</li>)}</ul></details>}
       <Colophon generatedAt={data?.meta.generated_at} />
     </div>
   );

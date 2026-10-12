@@ -3,7 +3,7 @@ export type DiscordEmbed = {
   url: string;
   description: string;
   color: number;
-  fields: { name: string; value: string; inline?: boolean }[];
+  fields?: { name: string; value: string; inline?: boolean }[];
   footer: { text: string };
 };
 

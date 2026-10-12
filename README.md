@@ -4,7 +4,7 @@ A small family newspaper: collect useful reporting, find a few things worth talk
 
 The hourly Cloudflare Worker collects 25 feeds across science, space, nature, health, engineering, culture, sport and public affairs. Each tick archives up to six newest entries per feed (150 total), enriches up to 40 pending articles and analyzes up to 16 stories with topic fairness. It saves reporting before AI work, clusters stories using Workers AI embeddings, and analyzes evidence with **OpenAI `gpt-6-luna`** when configured. The explicit Workers AI fallback follows the same editorial policy. Confidence is separate from interest; specialist and primary reporting can qualify without three publishers.
 
-One daily edition, by default **5 p.m. America/Chicago**, aims for **3–5 distinct stories**. It explains what happened, why it is interesting, a useful detail, qualifications and an optional conversation question. Fewer stories are fine. Failed collection is distinguished from a quiet day. Polymarket is a separate browseable section; odds and market contracts cannot enter the main briefing.
+One daily edition, by default **5 p.m. America/Chicago**, aims for **3–5 distinct stories**. Discord shows a linked headline and one short paragraph explaining what happened and why it is interesting (usually 25–45 words, at most 60). The website retains useful details, qualifications, conversation questions and evidence links. Fewer stories are fine. Failed collection is distinguished from a quiet day. Polymarket is a separate browseable section; odds and market contracts cannot enter the main briefing.
 
 ## Start locally
 
@@ -93,7 +93,7 @@ The front page leads with the most recent saved edition and has a broader news b
 | `POST /ops/news/refresh` | Collect and analyze current news without preparing or delivering an edition; requires `X-Ops-Token` |
 | `POST /ops/edition/reconcile` | Resolve an uncertain delivery after checking Discord; requires `X-Ops-Token` |
 
-`/topnews` reuses today's saved briefs or diverse qualified current stories. It does not call a model on demand. API responses are briefly cached. `GET /health` checks the Worker itself; `/api/status` assesses the news pipeline.
+`/topnews` uses the same concise Discord format for today's saved briefs or diverse qualified current stories. It does not call a model on demand. API responses are briefly cached. `GET /health` checks the Worker itself; `/api/status` assesses the news pipeline.
 
 ## Delivery and feedback
 

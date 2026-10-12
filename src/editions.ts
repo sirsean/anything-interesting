@@ -4,6 +4,7 @@ import { configInt, digestTimezone, localEditionDay, familyProfile } from './new
 import { MODEL_KIMI_JUDGE, runLLM, textFromChatContentOnly, textProvider } from './llm';
 import { postDigestWebhook, type DiscordEmbed } from './discord';
 import { digestClusterTitleLink } from './story_link';
+import { discordParagraph } from './discord_brief';
 
 export type StoryCandidate = { id: number; version: number; brief: Brief; evidence: Evidence[]; preference?: number };
 export type EditionItem = StoryCandidate & { position: number; delivery_status: string; message_id: string | null };
@@ -131,10 +132,9 @@ export async function prepareEdition(env: Env, now = new Date()): Promise<Editio
 }
 export function briefEmbed(env: Env, c: StoryCandidate): DiscordEmbed {
   const b = c.brief;
-  const description = [b.what_happened, b.why_interesting, b.detail, b.qualification ? 'Context: ' + b.qualification : '', b.question ? 'Talk about it: ' + b.question : ''].filter(Boolean).join('\n\n').slice(0, 4000);
+  const description = discordParagraph(b);
   return { title: b.headline, url: digestClusterTitleLink(env, c.id) ?? c.evidence[0]?.url ?? '', description, color: 0x326650,
-    fields: [{ name: 'Sources', value: c.evidence.slice(0, 4).map(e => '[' + e.publisher.replace(/[\[\]]/g, '') + '](' + e.url.replace(/[()]/g, encodeURIComponent) + ')').join(' · ').slice(0, 1000) }],
-    footer: { text: b.topic + ' · 👍/👎 tells us which stories interest your family.' } };
+    footer: { text: b.topic + ' · 👍/👎' } };
 }
 export async function deliverEdition(env: Env, edition: Edition): Promise<void> {
   if (!env.DISCORD_WEBHOOK_URL || !edition.items.length || ['delivered', 'quiet', 'incomplete'].includes(edition.status)) return;

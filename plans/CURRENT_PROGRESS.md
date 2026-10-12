@@ -1,12 +1,22 @@
 # Current progress
 
-**Project:** News Alerting Agent (Cloudflare Worker + D1 + Vectorize + KV + Discord). Active plan: [`IMPLEMENTATION-family-news.md`](IMPLEMENTATION-family-news.md). Historical architecture: `INITIAL.md`.
+**Project:** News Alerting Agent (Cloudflare Worker + D1 + Vectorize + KV + Discord). Active follow-up: [`MILESTONE-13-concise-discord.md`](MILESTONE-13-concise-discord.md). Completed foundation: [`IMPLEMENTATION-family-news.md`](IMPLEMENTATION-family-news.md). Historical architecture: `INITIAL.md`.
 
-**Agent workflow:** Work active milestones **in order** (M7 → M12); M1–M6 are historical. Each milestone file is a self-contained checklist. Update this file when you **start** or **finish** a milestone (date, branch, notes, blockers).
+**Agent workflow:** Read the active follow-up plan and update this file when work starts or finishes (date, branch, notes, blockers). M7–M12 are the completed foundation; M1–M6 are historical.
 
 ---
 
-## Current direction — 2026-10-11
+## M13 — Concise Discord (2026-10-11)
+
+**Status:** Complete and deployed as `55c1fb0b-f865-41ab-9fb2-040dfbfde6ad`. Discord and `/topnews` now show a linked headline and one short paragraph about the event and its interest. New analyses target 25–45 words; display is capped at 60 words/500 characters. Full details remain on the website.
+
+**Implementation:** A dedicated short summary is generated in the existing analysis call; older saved briefs use a bounded fallback with complete sentences where possible. Discord context/questions/detail/source blocks were removed and the reaction footer shortened. No migration or delivery-time model call is required.
+
+**Validation:** 179 tests, both TypeScript checks, diff checks and production build pass. Real Luna trial: 35 words. The actual five delivered stories preview as complete single paragraphs of 33–50 words (220–301 characters). Short payload/full saved-copy regression checks pass, and production health plus full website detail/source APIs are verified. No additional Discord messages were posted. The user explicitly authorized committing and pushing this completed M13 follow-up to `main` on 2026-10-11.
+
+---
+
+## Completed foundation — 2026-10-11
 
 **User request:** Full milestone/task plan and autonomous implementation of the approved family-news direction.
 
@@ -26,7 +36,7 @@
 - Real Luna science/sport checks validated the actual API contract and editorial calibration. Final production preview spans science, technology, health, world and nature; no market-driven entries. At the final check, 70 text calls and 107,489 reserved/actual tokens were recorded, with about $0.017 estimated successful Luna usage (infrastructure excluded).
 - Local saved-edition desktop/mobile/archive/detail checks and live production desktop/mobile/detail checks passed with no page errors or horizontal overflow. Final layout and policy-aware eligibility badges verified. Credential scan found no values in tracked diffs, untracked project files or public client assets.
 
-**Runtime notes:** Existing historical analysis backlog remains visible and is processed/aged out by bounded hourly work. The read-only preview is deterministic; the scheduled final editor can choose fewer or different stories. No manual Discord test messages were sent; the first new daily edition is due at 17:00 America/Chicago on 2026-10-11. Actual Discord delivery and first-week family usefulness are post-rollout observations, not claims established by offline tests. Quiet days and incomplete collection are distinct states.
+**Runtime notes:** Existing historical analysis backlog remains visible and is processed/aged out by bounded hourly work. The read-only preview is deterministic; the scheduled final editor can choose fewer or different stories. No manual Discord test messages were sent; the first new daily edition was delivered at 17:00 America/Chicago on 2026-10-11 and the user confirmed receiving it. Initial feedback requested shorter Discord copy (M13). First-week family usefulness remains an ongoing review. Quiet days and incomplete collection are distinct states.
 
 **Next:** Review the first seven delivered editions using the usefulness checklist in the rollout guide; use reactions and optional interests/locality to tune from real feedback. There is no remaining implementation blocker. On 2026-10-11, the user explicitly authorized committing and pushing this completed rollout to `main`.
 ---

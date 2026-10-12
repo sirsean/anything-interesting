@@ -88,7 +88,7 @@ describe('discord_cluster_embed', () => {
       row: cluster({ id: 99, polymarket_slug: null }),
       description: 'Body',
     });
-    expect(embed.fields.map((x) => x.name)).toEqual(['Topic', 'Sources']);
+    expect(embed.fields?.map((x) => x.name)).toEqual(['Topic', 'Sources']);
   });
 
   it('market-driven embeds headline the market question, not a matched article', async () => {

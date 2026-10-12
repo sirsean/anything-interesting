@@ -270,6 +270,7 @@ export function fetchMarket(slug: string, signal?: AbortSignal): Promise<MarketD
 }
 
 export type NewsBrief = {
+  discord_summary?: string;
   headline: string; what_happened: string; why_interesting: string; detail: string;
   question: string | null; qualification: string | null; topic: string; event_key: string;
   confidence: number; curiosity: number; significance: number; explainability: number;

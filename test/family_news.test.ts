@@ -4,7 +4,7 @@ import { sqliteD1 } from './sqlite';
 import type { Env } from '../src/env';
 import { storeIncomingArticle, enrichPendingArticles, runIngest } from '../src/ingest';
 import { analyzeStory, analyzePendingStories, EDITORIAL_POLICY_VERSION, parseBrief, briefScore, type Brief, type Evidence } from '../src/editorial';
-import { prepareEdition, readEdition, deliverEdition, loadCandidates, onDemandStories, claimLease, newsHealth, reconcileDelivery } from '../src/editions';
+import { prepareEdition, readEdition, deliverEdition, loadCandidates, onDemandStories, claimLease, newsHealth, reconcileDelivery, briefEmbed } from '../src/editions';
 import { runLLM, MODEL_KIMI_JUDGE } from '../src/llm';
 import { reserveTextCall } from '../src/model_usage';
 import { parseFeedXml } from '../src/rss';
@@ -161,6 +161,45 @@ describe('shared intelligence adapter and budget', () => {
 });
 
 describe('immutable editions and delivery', () => {
+  it('formats legacy briefs as one concise paragraph without website-only sections', () => {
+    const brief = { ...sampleBrief, qualification: 'Measurements remain preliminary.' };
+    const embed = briefEmbed({ PUBLIC_SITE_URL: 'https://news.example' } as Env, { id: 1, version: 1, brief, evidence });
+    expect(embed.description).toContain('ocean beneath the ice');
+    expect(embed.description).toContain('how oceans form');
+    expect(embed.description).not.toMatch(/\n|Context:|Talk about it:/);
+    expect(embed.description).not.toContain(brief.detail);
+    expect(embed.description).not.toContain(brief.question);
+    expect(embed.description).not.toContain(brief.qualification);
+    expect(embed.fields).toBeUndefined();
+    expect(embed.url).toBe('https://news.example/cluster/1');
+    expect(embed.description!.split(/\s+/).length).toBeLessThanOrEqual(60);
+    const longer = briefEmbed({} as Env, { id: 1, version: 1, brief: { ...brief, why_interesting: 'This discovery ' + 'adds new possibilities '.repeat(30) + 'for understanding oceans.' }, evidence });
+    expect(longer.description).toBe(brief.what_happened);
+  });
+  it('uses a dedicated short summary and bounds oversized model prose', () => {
+    const summary = 'An experimental device adjusts nerve signals without surgical implantation, pointing to a possible simpler approach to nerve stimulation.';
+    const brief = { ...sampleBrief, discord_summary: summary };
+    expect(parseBrief(JSON.stringify(brief), evidence).discord_summary).toBe(summary);
+    expect(() => parseBrief(JSON.stringify({ ...brief, discord_summary: [] }), evidence)).toThrow('Discord summary');
+    const embed = briefEmbed({} as Env, { id: 1, version: 1, brief, evidence });
+    expect(embed.description).toBe(summary);
+    const long = briefEmbed({} as Env, { id: 1, version: 1, brief: { ...brief, discord_summary: ('discovery '.repeat(100) + '\n\nMore background.') }, evidence });
+    expect(long.description!.length).toBeLessThanOrEqual(500);
+    expect(long.description!.split(/\s+/).length).toBeLessThanOrEqual(60);
+    expect(long.description).not.toContain('\n');
+  });
+  it('posts only the short paragraph while saving complete website explanations', async () => {
+    const { env } = setup();
+    const brief = { ...sampleBrief, discord_summary: 'A spacecraft found evidence of a hidden ocean, giving scientists a new way to explore how oceans form.', qualification: 'The measurements are preliminary.' };
+    await seed(env, brief); const edition = (await prepareEdition(env))!;
+    env.DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/123/fake';
+    const fetcher = vi.fn(async () => Response.json({ id: 'message' })); vi.stubGlobal('fetch', fetcher);
+    await deliverEdition(env, edition);
+    const payload = JSON.parse((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(payload.embeds[0].description).toBe(brief.discord_summary);
+    expect(payload.embeds[0].fields).toBeUndefined();
+    expect((await readEdition(env, edition.id))?.items[0]?.brief).toMatchObject({ what_happened: brief.what_happened, why_interesting: brief.why_interesting, detail: brief.detail, question: brief.question, qualification: brief.qualification });
+  });
   it('enforces a lease and serves saved copy after a cluster changes', async () => {
     const { env } = setup(); await seed(env);
     vi.mocked(env.AI.run).mockResolvedValue({ choices: [{ message: { content: '{"ids":[1],"reason":"A useful discovery"}' } }] } as never);
